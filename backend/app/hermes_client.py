@@ -93,7 +93,9 @@ def kanban_create(
     try:
         data = _parse_json(run_hermes(args))
     except HermesError:
-        text = run_hermes(args[:-1])  # retry without --json
+        # Retry without the --json flag (older Hermes prints a text table).
+        retry_args = [a for a in args if a != "--json"]
+        text = run_hermes(retry_args)
         match = re.search(r"\bt_([0-9a-f]{4,})\b", text)
         if not match:
             raise HermesError(f"kanban create returned no id: {text[:200]!r}")

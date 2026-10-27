@@ -22,12 +22,16 @@ export default function ExpertTeam() {
 
   const team = teams[0]
 
+  // Auto-fetch the final report when there is any done task and the report
+  // hasn't been shown yet (SSE task updates re-trigger this effect).
   useEffect(() => {
     if (teamFinal) return
+    const hasDone = tasks.some((t) => t.status === 'done')
+    if (!hasDone) return
     fetchTeamFinal(team?.id ?? 'research').then((r) => {
       if (r.report) setTeamFinal(r.report)
     }).catch(() => void 0)
-  }, [team, teamFinal, setTeamFinal])
+  }, [team, teamFinal, setTeamFinal, tasks])
 
   const invoke = async () => {
     if (!request.trim()) return
