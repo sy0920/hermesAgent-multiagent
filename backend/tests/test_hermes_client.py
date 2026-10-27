@@ -87,6 +87,18 @@ def test_kanban_list_tolerates_warning_prefix(monkeypatch):
     ]
 
 
+def test_kanban_list_text_fallback_handles_ready_arrow(monkeypatch):
+    """Hermes prints '▶' for ready tasks; table parser must accept it."""
+    text = "\u25b6 t_4ffb5355  ready  writer  专家团任务: 全面调研\u2026\n"
+    monkeypatch.setattr(
+        "app.hermes_client.run_hermes", lambda *a, **k: text
+    )
+    tasks = kanban_list()
+    assert tasks and tasks[0]["id"] == "t_4ffb5355"
+    assert tasks[0]["status"] == "ready"
+    assert tasks[0]["assignee"] == "writer"
+
+
 def test_kanban_list_json_parse_failure_falls_back_to_text(monkeypatch):
     """JSON failure falls back to text-table parsing instead of raising."""
     outputs = iter(["not json", "● t_1 doing researcher-a 调研"])

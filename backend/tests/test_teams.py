@@ -6,32 +6,29 @@ from app import teams
 from app.hermes_client import HermesError
 
 
-def test_invoke_calls_team_lead(monkeypatch):
-    captured = {}
+def test_invoke_builds_task_tree(monkeypatch):
+    """invoke deterministically builds the 4-task dependency tree."""
+    created = []
     monkeypatch.setattr(
         "app.teams.run_hermes",
-        lambda *args, **kwargs: captured.setdefault("runs", []).append(args) or "",
+        lambda *args, **kwargs: "",
     )
-    monkeypatch.setattr("app.teams.kanban_list", lambda: [])
     monkeypatch.setattr(
-        "app.teams.kanban_create", lambda title, **kw: captured.setdefault("created", []).append((title, kw)) or "t_root"
+        "app.teams.kanban_create",
+        lambda title, **kw: created.append((title, kw)) or f"t_{len(created) - 1}",
     )
     result = teams.invoke_team("research", "调研多Agent框架")
-    assert result["orchestrator_task_id"] == "t_root"
-    assert any("team-lead" in str(a) for a in captured.get("runs", []))
-
-
-def test_invoke_prefers_existing_task_tree(monkeypatch):
-    monkeypatch.setattr("app.teams.run_hermes", lambda *a, **k: "")
-    monkeypatch.setattr(
-        "app.teams.kanban_list",
-        lambda: [
-            {"id": "t_root", "status": "todo", "parents": []},
-            {"id": "t_child", "status": "todo", "parents": ["t_root"]},
-        ],
-    )
-    result = teams.invoke_team("research", "调研")
-    assert result["orchestrator_task_id"] == "t_root"
+    # 4 tasks must be created; final (writer) task returned (id t_3).
+    assert len(created) == 4
+    assert result["orchestrator_task_id"] == "t_3"
+    # writer task (index 3) must depend on review task (index 2).
+    assert created[3][1]["parent_ids"] == ["t_2"]
+    # review task depends on tech + case.
+    assert set(created[2][1]["parent_ids"]) == {"t_0", "t_1"}
+    assert created[0][1]["assignee"] == "researcher-a"
+    assert created[1][1]["assignee"] == "researcher-b"
+    assert created[2][1]["assignee"] == "reviewer"
+    assert created[3][1]["assignee"] == "writer"
 
 
 def test_invoke_unknown_team_404():

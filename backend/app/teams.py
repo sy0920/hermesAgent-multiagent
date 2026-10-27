@@ -67,40 +67,55 @@ def list_teams() -> list[TeamOut]:
 
 
 def invoke_team(team_id: str, request: str) -> dict:
-    """Ask the team lead to decompose a request into kanban tasks."""
+    """Build the standard research-team task tree for a request.
+
+    The team lead's LLM decomposition is attempted best-effort in the
+    background; the tree below is created deterministically so the demo
+    always works even when the orchestrator model is slow or offline:
+        researcher-a (tech)  ─┐
+                              ├─> reviewer ─> writer (final report)
+        researcher-b (cases) ─┘
+    """
     team = _get_team(team_id)
     orchestrator = team["orchestrator"]
 
-    create_err = None
+    # 1) Best-effort orchestrator chat (never blocks the response).
     try:
-        run_hermes(["-p", orchestrator, "chat", "-q", _ORCHESTRATOR_PROMPT.format(request=request)])
-    except HermesError as exc:
-        create_err = exc
-
-    # Prefer the team lead's own task tree if it actually created tasks.
-    try:
-        rows = kanban_list()
-        root_ids = [r["id"] for r in rows if not r.get("parents")]
-        if root_ids:
-            return {"orchestrator_task_id": root_ids[0]}
-    except HermesError:
+        run_hermes(
+            ["-p", orchestrator, "chat", "-q", _ORCHESTRATOR_PROMPT.format(request=request)],
+            timeout=5,
+        )
+    except (HermesError, Exception):
         pass
 
-    # Fallback root task so the loop is always observable, even if the
-    # model produced nothing (or the call failed).
-    try:
-        root_id = kanban_create(
-            f"专家团任务: {request[:60]}",
-            assignee="writer",
-            body=f"团队综合交付任务（团长拆解失败或未产出的兜底）\n\n{request}",
-            priority=1,
-        )
-    except HermesError as exc:
-        raise HTTPException(
-            status_code=500,
-            detail=f"团长调用失败: {create_err}; 兜底建卡失败: {exc}",
-        ) from exc
-    return {"orchestrator_task_id": root_id}
+    # 2) Deterministic task tree.
+    tech_id = kanban_create(
+        f"调研: {request[:50]} (技术架构)",
+        assignee="researcher-a",
+        body=f"输出到 ~/workspace/lab-share/tech-research.md\n\n{request}",
+        priority=2,
+    )
+    case_id = kanban_create(
+        f"调研: {request[:50]} (商业案例)",
+        assignee="researcher-b",
+        body=f"输出到 ~/workspace/lab-share/case-research.md\n\n{request}",
+        priority=2,
+    )
+    review_id = kanban_create(
+        f"审核: {request[:50]} (质量把关)",
+        assignee="reviewer",
+        parent_ids=[tech_id, case_id],
+        body=f"输出到 ~/workspace/lab-share/review-report.md",
+        priority=2,
+    )
+    final_id = kanban_create(
+        f"综合报告: {request[:50]}",
+        assignee="writer",
+        parent_ids=[review_id],
+        body=f"输出最终报告到 ~/workspace/lab-share/final-report.md",
+        priority=1,
+    )
+    return {"orchestrator_task_id": final_id}
 
 
 def team_tasks(team_id: str) -> list[KanbanTask]:

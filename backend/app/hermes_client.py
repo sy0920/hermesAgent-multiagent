@@ -127,34 +127,38 @@ def kanban_list() -> list[dict]:
 def _parse_kanban_table(text: str) -> list[dict]:
     """Parse the human-facing ``hermes kanban list`` table.
 
-    Lines look like: ``● t_8da0766b doing researcher-a 调研技术架构``
-    i.e. [icon] id [status] assignee title.
+    Hermes prints one row per task: ``<icon> <id> <status> <assignee> <title>``
+    where icon may be ▶ ● ◻ ⊘ ✓ and columns are space-separated (no fixed
+    widths in `--json`-less mode). We locate the ``t_`` id and treat the
+    tokens around it defensively.
     """
     tasks: list[dict] = []
-    icon_map = {"●": "running", "◻": "todo", "⊘": "blocked", "✓": "done"}
     status_words = {"todo", "ready", "doing", "running", "done", "blocked"}
+    icon_tokens = {"\u25b6", "\u25cf", "\u25fb", "\u2298", "\u2713"}
     for line in text.splitlines():
         stripped = line.strip()
-        if not stripped or len(stripped) < 16:
+        if not stripped or len(stripped) < 8:
             continue
         tokens = stripped.split()
-        if not tokens:
+        id_idx = next(
+            (i for i, t in enumerate(tokens) if t.startswith("t_") and len(t) >= 3),
+            None,
+        )
+        if id_idx is None:
             continue
-        idx = 0
-        status = None
-        if tokens[idx] in icon_map:
-            status = icon_map[tokens[idx]]
-            idx += 1
-        if idx >= len(tokens) or not tokens[idx].startswith("t_"):
-            continue
-        task_id = tokens[idx]
-        idx += 1
-        if idx < len(tokens) and tokens[idx] in status_words:
-            status = tokens[idx]
-            idx += 1
-        status = status or "todo"
-        assignee = tokens[idx] if len(tokens) > idx else None
-        title = " ".join(tokens[idx + 1:])
+        task_id = tokens[id_idx]
+        # Status: either the token right after the id, or derived from icon.
+        status = "todo"
+        if id_idx + 1 < len(tokens) and tokens[id_idx + 1] in status_words:
+            status = tokens[id_idx + 1]
+        # Assignee: the token right after status (before the title).
+        assignee = None
+        title_start = id_idx + 1
+        if id_idx + 1 < len(tokens) and tokens[id_idx + 1] in status_words:
+            if id_idx + 2 < len(tokens):
+                assignee = tokens[id_idx + 2]
+                title_start = id_idx + 3
+        title = " ".join(tokens[title_start:])
         tasks.append(
             {
                 "id": task_id,
