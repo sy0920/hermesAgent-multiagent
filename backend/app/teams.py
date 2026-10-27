@@ -1,19 +1,20 @@
-"""Expert-team orchestration.
+"""Expert-team orchestration (Planner/Executor split).
 
 An expert team is a named group of expert profiles driven by an
-orchestrator profile ("team lead"). MVP flow:
+orchestrator ("team lead"). The team lead is the *Planner*: it reads the
+user request and returns a structured JSON plan describing which tasks
+each member should do and how they depend on each other. The backend is
+the *Executor*: it turns that plan into kanban tasks and creates them.
 
-1. User sends a request to the team.
-2. The backend asks the team-lead profile to decompose it into kanban
-   tasks (via ``kanban create``), assigning each to a member.
-3. The frontend watches kanban/events; tasks move todo → doing → done.
-4. The final consolidated report is read from the done task's metadata.
-
-The team-lead call is best-effort: if the model does not create useful
-tasks, the backend still registers a root task so the loop is observable.
+If the planner's output is unparsable, references an unknown member, or
+the orchestrator call fails, the executor falls back to a default tree so
+the demo always produces a working board.
 """
 
 from __future__ import annotations
+
+import json
+import re
 
 from fastapi import APIRouter, HTTPException
 
@@ -42,13 +43,17 @@ TEAMS = [
     }
 ]
 
-_ORCHESTRATOR_PROMPT = (
-    "你是全栈研究团的团长。用户需求：{request}。\n"
-    "请按照标准流程用 kanban_create 拆解任务并分配："
-    "（1）调研类任务 assignee=researcher-a/b；"
-    "（2）质量审核 assignee=reviewer（parent 指向调研任务）；"
-    "（3）综合报告 assignee=writer（parent 指向审核任务）。"
-    "用 --body 写明输出要求。"
+_PLAN_PROMPT = (
+    "你是全栈研究团的团长。用户需求：{request}\n\n"
+    "请**只输出一个 JSON 计划**（不要解释、不要调用任何工具），用于把需求拆成任务。"
+    "格式：\n"
+    "{{\"tasks\": [{{\"title\": \"任务标题\", \"assignee\": \"成员名\", "
+    "\"parents\": [任务序号], \"body\": \"输出要求\", \"final\": true}}]}}\n"
+    "规则：\n"
+    "- assignee 必须是: researcher-a, researcher-b, reviewer, writer\n"
+    "- parents 是**之前任务在数组中的序号**（0 起），表示依赖\n"
+    "- 恰好一个任务带 \"final\": true 作为最终交付\n"
+    "- 根据需求性质合理拆分（调研/开发/审核/汇总均可）\n"
 )
 
 
@@ -66,29 +71,78 @@ def list_teams() -> list[TeamOut]:
     ]
 
 
-def invoke_team(team_id: str, request: str) -> dict:
-    """Build the standard research-team task tree for a request.
+def _extract_plan(text: str) -> dict | None:
+    """Pull a JSON plan out of the LLM reply.
 
-    The team lead's LLM decomposition is attempted best-effort in the
-    background; the tree below is created deterministically so the demo
-    always works even when the orchestrator model is slow or offline:
-        researcher-a (tech)  ─┐
-                              ├─> reviewer ─> writer (final report)
-        researcher-b (cases) ─┘
+    Tolerates prose around the JSON and a ```json fence. Returns None when
+    the reply contains no usable JSON object.
     """
-    team = _get_team(team_id)
-    orchestrator = team["orchestrator"]
-
-    # 1) Best-effort orchestrator chat (never blocks the response).
+    if not text:
+        return None
+    # Prefer content inside a json fence if present.
+    fence = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
+    candidate = fence.group(1) if fence else text
+    start = candidate.find("{")
+    end = candidate.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        return None
     try:
-        run_hermes(
-            ["-p", orchestrator, "chat", "-q", _ORCHESTRATOR_PROMPT.format(request=request)],
-            timeout=5,
-        )
-    except (HermesError, Exception):
-        pass
+        data = json.loads(candidate[start : end + 1])
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict) or not isinstance(data.get("tasks"), list):
+        return None
+    return data
 
-    # 2) Deterministic task tree.
+
+def _validate_plan(data: dict, members: list[str]) -> bool:
+    """A plan is usable when every assignee is a member and parents refer
+    to earlier tasks (no forward/self references)."""
+    tasks = data["tasks"]
+    if not tasks:
+        return False
+    finals = 0
+    for i, t in enumerate(tasks):
+        if not isinstance(t, dict):
+            return False
+        if not isinstance(t.get("title"), str) or not t["title"].strip():
+            return False
+        assignee = t.get("assignee")
+        if assignee not in members:
+            return False
+        for p in t.get("parents") or []:
+            if not isinstance(p, int) or p < 0 or p >= i:
+                return False
+        if t.get("final"):
+            finals += 1
+    return finals == 1
+
+
+def _build_from_plan(data: dict, fallback_request: str) -> str | None:
+    """Create kanban tasks per the plan; return the final task id, or None
+    on creation failure."""
+    try:
+        ids: list[str] = []
+        final_id: str | None = None
+        for t in data["tasks"]:
+            parents = [ids[p] for p in (t.get("parents") or [])]
+            task_id = kanban_create(
+                t["title"],
+                assignee=t["assignee"],
+                parent_ids=parents,
+                body=t.get("body") or f"需求: {fallback_request[:120]}",
+                priority=1 if t.get("final") else 2,
+            )
+            ids.append(task_id)
+            if t.get("final"):
+                final_id = task_id
+        return final_id
+    except HermesError:
+        return None
+
+
+def _build_default_tree(request: str) -> str:
+    """Deterministic fallback tree: tech + case -> review -> final report."""
     tech_id = kanban_create(
         f"调研: {request[:50]} (技术架构)",
         assignee="researcher-a",
@@ -105,16 +159,42 @@ def invoke_team(team_id: str, request: str) -> dict:
         f"审核: {request[:50]} (质量把关)",
         assignee="reviewer",
         parent_ids=[tech_id, case_id],
-        body=f"输出到 ~/workspace/lab-share/review-report.md",
+        body="输出到 ~/workspace/lab-share/review-report.md",
         priority=2,
     )
     final_id = kanban_create(
         f"综合报告: {request[:50]}",
         assignee="writer",
         parent_ids=[review_id],
-        body=f"输出最终报告到 ~/workspace/lab-share/final-report.md",
+        body="输出最终报告到 ~/workspace/lab-share/final-report.md",
         priority=1,
     )
+    return final_id
+
+
+def invoke_team(team_id: str, request: str) -> dict:
+    """Ask the planner (team lead) for a task plan, then execute it.
+
+    Planner errors degrade to the default tree instead of failing loudly.
+    """
+    team = _get_team(team_id)
+    orchestrator = team["orchestrator"]
+
+    final_id: str | None = None
+    try:
+        reply = run_hermes(
+            ["-p", orchestrator, "chat", "-q", _PLAN_PROMPT.format(request=request)],
+            timeout=60,
+        )
+        plan = _extract_plan(reply)
+        if plan is not None and _validate_plan(plan, team["members"]):
+            final_id = _build_from_plan(plan, request)
+    except (HermesError, Exception):
+        final_id = None
+
+    if final_id is None:
+        final_id = _build_default_tree(request)
+
     return {"orchestrator_task_id": final_id}
 
 
