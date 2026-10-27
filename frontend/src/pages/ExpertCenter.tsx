@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { Expert } from '../api/client'
-import { deleteExpert, fetchExperts, fetchSkills } from '../api/client'
+import { deleteExpert, fetchExperts, fetchSkills, fetchTeams } from '../api/client'
 import { useStore } from '../store'
 import ExpertCard from '../components/ExpertCard'
 import CreateExpertModal from '../components/CreateExpertModal'
@@ -8,9 +8,11 @@ import CreateExpertModal from '../components/CreateExpertModal'
 export default function ExpertCenter() {
   const experts = useStore((s) => s.experts)
   const setExperts = useStore((s) => s.setExperts)
+  const setTeams = useStore((s) => s.setTeams)
   const [showCreate, setShowCreate] = useState(false)
 
   const refresh = () => fetchExperts().then(setExperts).catch(console.error)
+  const refreshTeams = () => fetchTeams().then(setTeams).catch(console.error)
 
   useEffect(() => {
     fetchSkills().catch(() => void 0)
@@ -54,6 +56,7 @@ export default function ExpertCenter() {
           onCreated={() => {
             setShowCreate(false)
             refresh()
+            refreshTeams() // 新专家加入后专家团成员同步更新
           }}
         />
       )}

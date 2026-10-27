@@ -215,10 +215,23 @@ def execute_kanban_task(
 ) -> str:
     """Manually dispatch a worker: run the expert profile against a task.
 
+    The prompt instructs the worker to follow the full kanban worker
+    lifecycle: read the task via kanban_show, do the work, then record the
+    outcome via kanban_complete with a summary and ``metadata.final`` so
+    downstream aggregation (team_final) has something to read.
+
     ``extra_context`` (e.g. parent-task summaries) is appended to the
     worker prompt so downstream members see upstream outputs.
     """
-    prompt = f"work kanban task {task_id}"
+    prompt = (
+        f"You are the kanban worker for task {task_id}. "
+        f"Work the kanban task:\n"
+        f"1. Call kanban_show(task_id=\"{task_id}\") to read the task spec.\n"
+        f"2. Complete the work described in the task body.\n"
+        f"3. Call kanban_complete(task_id=\"{task_id}\", "
+        f"summary=\"<工作摘要>\", metadata={{\"final\": \"<最终结果 Markdown>\"}}).\n"
+        f"Always record metadata.final with your complete deliverable."
+    )
     if extra_context:
         prompt += f"\n\n## 上游上下文\n{extra_context}"
     return run_hermes(

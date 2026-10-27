@@ -18,6 +18,11 @@ def _fake_create(created):
 
 def _stub_llm(monkeypatch, output):
     monkeypatch.setattr("app.teams.run_hermes", lambda *a, **k: output)
+    # Keep team-member resolution off the real Hermes CLI.
+    monkeypatch.setattr(
+        "app.teams._registered_expert_ids",
+        lambda: ["researcher-a", "researcher-b", "reviewer", "writer"],
+    )
 
 
 def test_invoke_uses_orchestrator_plan(monkeypatch):
@@ -110,6 +115,10 @@ def test_invoke_falls_back_when_orchestrator_fails(monkeypatch):
     """Hermes CLI failure during the orchestrator call still produces a tree."""
     created = []
     monkeypatch.setattr("app.teams.kanban_create", _fake_create(created))
+    monkeypatch.setattr(
+        "app.teams._registered_expert_ids",
+        lambda: ["researcher-a", "researcher-b", "reviewer", "writer"],
+    )
 
     def fail_run(*a, **k):
         raise HermesError("orchestrator crashed")

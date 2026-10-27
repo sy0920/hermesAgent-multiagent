@@ -56,13 +56,16 @@ export default function ExpertTeam() {
     }
     setBusy(true)
     try {
-      for (const t of pendings) {
-        await runTask(t.id)
-        setExecuted((prev) => [...prev, t.id])
-      }
-      setMsg(`已触发 ${pendings.length} 个任务执行`)
+      // Dispatch all in parallel (matches the multi-agent "并行执行" intent).
+      await Promise.all(
+        pendings.map(async (t) => {
+          await runTask(t.id)
+          setExecuted((prev) => [...prev, t.id])
+        }),
+      )
+      setMsg(`已触发 ${pendings.length} 个任务并行执行`)
     } catch (e) {
-      setMsg(`触发失败: ${(e as Error).message}`)
+      setMsg(`部分触发失败: ${(e as Error).message}`)
     } finally {
       setBusy(false)
     }

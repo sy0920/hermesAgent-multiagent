@@ -6,6 +6,15 @@ from app import teams
 from app.hermes_client import HermesError
 
 
+@pytest.fixture(autouse=True)
+def _stub_members(monkeypatch):
+    """Resolve team members without touching the Hermes CLI."""
+    monkeypatch.setattr(
+        "app.teams._registered_expert_ids",
+        lambda: ["researcher-a", "researcher-b", "reviewer", "writer"],
+    )
+
+
 def test_invoke_builds_task_tree(monkeypatch):
     """invoke deterministically builds the 4-task dependency tree."""
     created = []

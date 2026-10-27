@@ -31,6 +31,10 @@ def test_invoke_auto_dispatches_workers_in_parallel(monkeypatch):
     created = []
     monkeypatch.setattr("app.teams.run_hermes", lambda *a, **k: "")
     monkeypatch.setattr(
+        "app.teams._registered_expert_ids",
+        lambda: ["researcher-a", "researcher-b", "reviewer", "writer"],
+    )
+    monkeypatch.setattr(
         "app.teams.kanban_create",
         lambda title, **kw: created.append((title, kw)) or f"t_{len(created) - 1}",
     )
@@ -61,6 +65,10 @@ def test_invoke_auto_dispatches_workers_in_parallel(monkeypatch):
 
 def test_team_final_aggregates_from_done_writer(monkeypatch):
     """team_final should read the writer task's metadata['final'] when done."""
+    monkeypatch.setattr(
+        "app.teams._registered_expert_ids",
+        lambda: ["researcher-a", "researcher-b", "reviewer", "writer"],
+    )
     monkeypatch.setattr(
         "app.teams.kanban_list",
         lambda: [
