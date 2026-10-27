@@ -20,6 +20,7 @@ from fastapi import APIRouter, HTTPException
 
 from app.hermes_client import (
     HermesError,
+    execute_kanban_task,
     kanban_create,
     kanban_list,
     kanban_show,
@@ -195,7 +196,44 @@ def invoke_team(team_id: str, request: str) -> dict:
     if final_id is None:
         final_id = _build_default_tree(request)
 
+    # Auto-dispatch ready (root) tasks in parallel via background threads.
+    _auto_dispatch_ready()
+
     return {"orchestrator_task_id": final_id}
+
+
+def _auto_dispatch_ready() -> None:
+    """Dispatch all 'ready' root tasks (no parents) in parallel threads."""
+    import threading
+
+    try:
+        rows = kanban_list()
+    except HermesError:
+        return
+    ready = [r for r in rows if r.get("status") == "ready" and not (r.get("parents") or [])]
+    threads = []
+    for row in ready:
+        assignee = row.get("assignee")
+        task_id = row.get("id")
+        if assignee and task_id:
+            t = threading.Thread(
+                target=_dispatch_worker_safe,
+                args=(assignee, task_id),
+                daemon=True,
+            )
+            threads.append(t)
+            t.start()
+
+
+def _dispatch_worker_safe(assignee: str, task_id: str) -> None:
+    """Run a worker in a background thread; failures are logged, not raised."""
+    import logging
+
+    logger = logging.getLogger(__name__)
+    try:
+        execute_kanban_task(assignee, task_id, timeout=300)
+    except HermesError as exc:
+        logger.warning("auto-dispatch worker failed for %s: %s", task_id, exc)
 
 
 def team_tasks(team_id: str) -> list[KanbanTask]:

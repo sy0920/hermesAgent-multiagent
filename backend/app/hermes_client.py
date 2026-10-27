@@ -207,10 +207,22 @@ def kanban_unblock(task_id: str) -> None:
     run_hermes(["kanban", "unblock", task_id])
 
 
-def execute_kanban_task(profile: str, task_id: str, timeout: int = WORKER_TIMEOUT) -> str:
-    """Manually dispatch a worker: run the expert profile against a task."""
+def execute_kanban_task(
+    profile: str,
+    task_id: str,
+    timeout: int = WORKER_TIMEOUT,
+    extra_context: str = "",
+) -> str:
+    """Manually dispatch a worker: run the expert profile against a task.
+
+    ``extra_context`` (e.g. parent-task summaries) is appended to the
+    worker prompt so downstream members see upstream outputs.
+    """
+    prompt = f"work kanban task {task_id}"
+    if extra_context:
+        prompt += f"\n\n## 上游上下文\n{extra_context}"
     return run_hermes(
-        ["-p", profile, "chat", "-q", f"work kanban task {task_id}"],
+        ["-p", profile, "chat", "-q", prompt],
         timeout=timeout,
     )
 

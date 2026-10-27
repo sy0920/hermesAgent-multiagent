@@ -26,7 +26,7 @@ def test_run_task_does_not_execute_inline(monkeypatch):
     )
 
     # Overwrite the module's direct reference so inline call would be visible.
-    def track_call(profile, task):
+    def track_call(profile, task, **kw):
         captured["called"] = (profile, task)
         return "done"
 

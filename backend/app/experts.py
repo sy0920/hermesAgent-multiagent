@@ -80,6 +80,7 @@ def _read_expert(profile_name: str, default_model: str = "deepseek-chat") -> Exp
     sections = _parse_soul(soul_path.read_text(encoding="utf-8"))
     persona_first = sections.get("persona", "").splitlines()[0].strip() if sections["persona"] else ""
     display_name = persona_first[:20] if persona_first else profile_name
+    status, model = _read_profile_status(profile_name)
     return ExpertOut(
         id=profile_name,
         display_name=display_name,
@@ -87,10 +88,30 @@ def _read_expert(profile_name: str, default_model: str = "deepseek-chat") -> Exp
         persona=sections["persona"],
         expertise=sections["expertise"],
         prompt=sections["prompt"],
-        model=default_model,
+        model=model or default_model,
         skills=_profile_skills(profile_name),
-        status="parked",
+        status=status,
     )
+
+
+def _read_profile_status(name: str) -> tuple[str, str]:
+    """Read a profile's gateway status and model from `hermes profile list`."""
+    try:
+        stdout = run_hermes(["profile", "list"])
+    except HermesError:
+        return ("parked", "deepseek-chat")
+    for line in stdout.splitlines():
+        if name in line:
+            tokens = line.split()
+            status = "parked"
+            model = "deepseek-chat"
+            for tok in tokens:
+                if tok in {"running", "parked", "stopped"}:
+                    status = tok
+                if "deepseek" in tok or "gpt" in tok or "claude" in tok:
+                    model = tok
+            return (status, model)
+    return ("parked", "deepseek-chat")
 
 
 @router.get("/experts", response_model=list[ExpertOut])
@@ -123,6 +144,13 @@ def create_expert(payload: ExpertCreate) -> ExpertOut:
         f"# Prompt\n{payload.prompt}\n"
     )
     soul_path.write_text(soul_text, encoding="utf-8")
+
+    # Persist model configuration on the profile.
+    if payload.model:
+        try:
+            run_hermes(["-p", profile_name, "model", "set", payload.model])
+        except HermesError:
+            pass  # model config is best-effort; SOUL.md is the primary identity
 
     # Bind selected skills by copying their SKILL.md into the profile's skills dir.
     if payload.skills:

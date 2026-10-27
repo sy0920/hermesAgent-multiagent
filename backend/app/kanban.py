@@ -88,18 +88,43 @@ def run_task(task_id: str, background_tasks: BackgroundTasks | None = None) -> K
     assignee = row.get("assignee")
     if not assignee:
         raise HTTPException(status_code=400, detail="任务没有 assignee，无法执行")
+    # Gather parent-task summaries so the worker sees upstream outputs.
+    extra_context = _collect_parent_context(task_id)
     if background_tasks is not None:
-        background_tasks.add_task(_run_worker, assignee, task_id)
+        background_tasks.add_task(_run_worker, assignee, task_id, extra_context)
     return KanbanRunResult(run_id=task_id)
 
 
-def _run_worker(assignee: str, task_id: str) -> None:
+def _collect_parent_context(task_id: str) -> str:
+    """Build a context string from parent tasks' summaries/metadata."""
+    try:
+        row = kanban_show(task_id)
+    except HermesError:
+        return ""
+    parents = row.get("parents") or []
+    if not parents:
+        return ""
+    parts = []
+    for pid in parents:
+        try:
+            parent = kanban_show(pid)
+        except HermesError:
+            continue
+        summary = parent.get("summary") or ""
+        title = parent.get("title") or pid
+        metadata = parent.get("metadata") or {}
+        files = metadata.get("changed_files") or metadata.get("files") or []
+        parts.append(f"## 上游任务: {title}\n{summary}")
+        if files:
+            parts.append(f"产出文件: {', '.join(files)}")
+    return "\n\n".join(parts)
+
+
+def _run_worker(assignee: str, task_id: str, extra_context: str = "") -> None:
     """Background entrypoint; errors are captured and logged, never raised."""
     try:
-        execute_kanban_task(assignee, task_id)
+        execute_kanban_task(assignee, task_id, extra_context=extra_context)
     except HermesError as exc:
-        # Surfacing to the user happens through the kanban status/SSE;
-        # the worker failure is recorded on the task by Hermes itself.
         logger.warning("kanban worker failed for %s: %s", task_id, exc)
 
 
