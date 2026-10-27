@@ -41,6 +41,16 @@ def test_run_hermes_raises_on_nonzero_exit(monkeypatch):
     assert "boom" in str(exc_info.value)
 
 
+def test_run_hermes_raises_friendly_when_bin_missing(monkeypatch):
+    def fail(*a, **k):
+        raise FileNotFoundError("hermes")
+
+    monkeypatch.setattr("app.hermes_client.subprocess.run", fail)
+    with pytest.raises(HermesError) as exc_info:
+        run_hermes(["profile", "list"])
+    assert "hermes" in str(exc_info.value)
+
+
 def test_kanban_create_parses_json_id(monkeypatch):
     _patch(monkeypatch, _FakeResult(stdout='{"id": "t_abc123"}'))
     assert kanban_create("调研", assignee="researcher-a") == "t_abc123"

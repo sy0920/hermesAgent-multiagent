@@ -9,11 +9,12 @@ for the first line that starts a JSON document.
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 from pathlib import Path
 
-HERMES_BIN = "hermes"
+HERMES_BIN = os.environ.get("HERMES_BIN", "hermes")
 DEFAULT_TIMEOUT = 120
 WORKER_TIMEOUT = 600
 
@@ -33,6 +34,11 @@ def run_hermes(args: list[str], timeout: int = DEFAULT_TIMEOUT) -> str:
         )
     except subprocess.TimeoutExpired as exc:
         raise HermesError(f"hermes timed out after {timeout}s: {args}") from exc
+    except FileNotFoundError as exc:
+        raise HermesError(
+            f"hermes 命令不存在。请在 PATH 中添加 Hermes 可执行文件目录"
+            f"（如 HERMES_BIN 或 ~/.local/bin），然后重试"
+        ) from exc
     if proc.returncode != 0:
         raise HermesError(proc.stderr.strip() or proc.stdout.strip() or "hermes failed")
     return proc.stdout
