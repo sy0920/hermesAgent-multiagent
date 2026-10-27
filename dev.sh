@@ -9,6 +9,10 @@ FRONTEND_PORT="${FRONTEND_PORT:-3000}"
 
 echo "→ 启动后端 (uvicorn :${BACKEND_PORT})..."
 cd "$ROOT/backend"
+if ! python3 -c "import fastapi, uvicorn" 2>/dev/null; then
+  echo "  (首次运行安装后端依赖)"
+  pip install -r requirements.txt
+fi
 python3 -m uvicorn app.main:app --host 0.0.0.0 --port "$BACKEND_PORT" &
 BACK_PID=$!
 
