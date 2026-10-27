@@ -25,6 +25,7 @@ def _homedir(monkeypatch, tmp_path) -> Path:
 def test_create_expert_writes_soul_and_calls_profile(monkeypatch, tmp_path):
     fake_home = _homedir(monkeypatch, tmp_path)
     calls = []
+    monkeypatch.setattr("app.experts.profile_list", lambda: ["researcher-a"])
     monkeypatch.setattr(
         "app.experts.profile_create", lambda n: calls.append(("create", n))
     )
@@ -59,6 +60,7 @@ def test_create_duplicate_profile_returns_409(monkeypatch, tmp_path):
     def fail_create(n):
         raise HermesError("profile 'x' already exists")
 
+    monkeypatch.setattr("app.experts.profile_list", lambda: ["x"])
     monkeypatch.setattr("app.experts.profile_create", fail_create)
     monkeypatch.setattr(
         "app.experts.profile_soul_path",

@@ -77,6 +77,15 @@ def invoke_team(team_id: str, request: str) -> dict:
     except HermesError as exc:
         create_err = exc
 
+    # Prefer the team lead's own task tree if it actually created tasks.
+    try:
+        rows = kanban_list()
+        root_ids = [r["id"] for r in rows if not r.get("parents")]
+        if root_ids:
+            return {"orchestrator_task_id": root_ids[0]}
+    except HermesError:
+        pass
+
     # Fallback root task so the loop is always observable, even if the
     # model produced nothing (or the call failed).
     try:
@@ -87,11 +96,9 @@ def invoke_team(team_id: str, request: str) -> dict:
             priority=1,
         )
     except HermesError as exc:
-        if create_err is not None:
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
         raise HTTPException(
             status_code=500,
-            detail=f"团长调用与兜底建卡均失败: {exc}",
+            detail=f"团长调用失败: {create_err}; 兜底建卡失败: {exc}",
         ) from exc
     return {"orchestrator_task_id": root_id}
 

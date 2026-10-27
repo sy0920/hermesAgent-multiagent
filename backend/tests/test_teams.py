@@ -12,12 +12,26 @@ def test_invoke_calls_team_lead(monkeypatch):
         "app.teams.run_hermes",
         lambda *args, **kwargs: captured.setdefault("runs", []).append(args) or "",
     )
+    monkeypatch.setattr("app.teams.kanban_list", lambda: [])
     monkeypatch.setattr(
         "app.teams.kanban_create", lambda title, **kw: captured.setdefault("created", []).append((title, kw)) or "t_root"
     )
     result = teams.invoke_team("research", "调研多Agent框架")
-    assert result["orchestrator_task_id"] in ("t_root", "t_created")
+    assert result["orchestrator_task_id"] == "t_root"
     assert any("team-lead" in str(a) for a in captured.get("runs", []))
+
+
+def test_invoke_prefers_existing_task_tree(monkeypatch):
+    monkeypatch.setattr("app.teams.run_hermes", lambda *a, **k: "")
+    monkeypatch.setattr(
+        "app.teams.kanban_list",
+        lambda: [
+            {"id": "t_root", "status": "todo", "parents": []},
+            {"id": "t_child", "status": "todo", "parents": ["t_root"]},
+        ],
+    )
+    result = teams.invoke_team("research", "调研")
+    assert result["orchestrator_task_id"] == "t_root"
 
 
 def test_invoke_unknown_team_404():

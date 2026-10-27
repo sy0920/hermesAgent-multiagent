@@ -84,26 +84,113 @@ def kanban_create(
     args += ["--priority", str(priority), "--json"]
     if workspace:
         args += ["--workspace", workspace]
-    data = _parse_json(run_hermes(args))
+    try:
+        data = _parse_json(run_hermes(args))
+    except HermesError:
+        text = run_hermes(args[:-1])  # retry without --json
+        match = re.search(r"\bt_([0-9a-f]{4,})\b", text)
+        if not match:
+            raise HermesError(f"kanban create returned no id: {text[:200]!r}")
+        return match.group(0)
     if not isinstance(data, dict) or "id" not in data:
         raise HermesError(f"kanban create returned no id: {data!r}")
     return data["id"]
 
 
 def kanban_list() -> list[dict]:
-    """Return all kanban tasks as a list of dicts."""
-    data = _parse_json(run_hermes(["kanban", "list", "--json"]))
+    """Return all kanban tasks.
+
+    Prefers ``--json`` output; falls back to parsing the plain-text table
+    that Hermes prints when the CLI release predates the flag.
+    """
+    try:
+        json_text = run_hermes(["kanban", "list", "--json"])
+        data = _parse_json(json_text)
+    except HermesError:
+        text = run_hermes(["kanban", "list"])
+        data = _parse_kanban_table(text)
+        if not data:
+            raise HermesError(
+                f"kanban list failed (json={json_text[:120]!r}, text={text[:120]!r})"
+            )
     if not isinstance(data, list):
         raise HermesError(f"kanban list returned non-list: {data!r}")
     return data
 
 
+def _parse_kanban_table(text: str) -> list[dict]:
+    """Parse the human-facing ``hermes kanban list`` table.
+
+    Lines look like: ``● t_8da0766b doing researcher-a 调研技术架构``
+    i.e. [icon] id [status] assignee title.
+    """
+    tasks: list[dict] = []
+    icon_map = {"●": "running", "◻": "todo", "⊘": "blocked", "✓": "done"}
+    status_words = {"todo", "ready", "doing", "running", "done", "blocked"}
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or len(stripped) < 16:
+            continue
+        tokens = stripped.split()
+        if not tokens:
+            continue
+        idx = 0
+        status = None
+        if tokens[idx] in icon_map:
+            status = icon_map[tokens[idx]]
+            idx += 1
+        if idx >= len(tokens) or not tokens[idx].startswith("t_"):
+            continue
+        task_id = tokens[idx]
+        idx += 1
+        if idx < len(tokens) and tokens[idx] in status_words:
+            status = tokens[idx]
+            idx += 1
+        status = status or "todo"
+        assignee = tokens[idx] if len(tokens) > idx else None
+        title = " ".join(tokens[idx + 1:])
+        tasks.append(
+            {
+                "id": task_id,
+                "title": title,
+                "status": status,
+                "assignee": assignee,
+                "parents": [],
+            }
+        )
+    return tasks
+
+
 def kanban_show(task_id: str) -> dict:
-    """Return details for a single task."""
-    data = _parse_json(run_hermes(["kanban", "show", task_id, "--json"]))
+    """Return details for a single task (JSON-first with text fallback)."""
+    try:
+        data = _parse_json(run_hermes(["kanban", "show", task_id, "--json"]))
+    except HermesError:
+        # Minimal fallback: the CLI prints a heading plus key: value lines.
+        data = _parse_kanban_show_text(run_hermes(["kanban", "show", task_id]))
     if not isinstance(data, dict):
         raise HermesError(f"kanban show returned non-dict: {data!r}")
     return data
+
+
+def _parse_kanban_show_text(text: str) -> dict:
+    """Parse ``hermes kanban show <id>`` plain-text output into a dict."""
+    row: dict = {"id": None, "title": "", "status": "todo", "assignee": None,
+                 "body": "", "summary": None, "metadata": {}, "runs": [], "parents": []}
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("Task "):
+            rest = stripped[len("Task "):]
+            parts = rest.split(":", 1)
+            if parts[0].startswith("t_"):
+                row["id"] = parts[0].strip()
+                row["title"] = parts[1].strip() if len(parts) > 1 else ""
+        elif stripped.startswith(("status:", "assignee:", "body:", "summary:")):
+            key, _, value = stripped.partition(":")
+            key = key.strip().lower()
+            if key in {"status", "assignee", "body", "summary"}:
+                row[key] = value.strip()
+    return row
 
 
 def kanban_unblock(task_id: str) -> None:

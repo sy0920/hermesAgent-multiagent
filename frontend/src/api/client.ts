@@ -124,7 +124,10 @@ export function fetchTeamFinal(teamId: string): Promise<TeamFinal> {
 }
 
 // SSE subscription with auto-reconnect. Returns an unsubscribe function.
-export function subscribeKanban(onUpdate: (tasks: KanbanTask[]) => void): () => void {
+export function subscribeKanban(
+  onUpdate: (tasks: KanbanTask[]) => void,
+  onDisconnect?: () => void,
+): () => void {
   const src = new EventSource(`${BASE}/kanban/events`)
   src.addEventListener('update', (ev) => {
     try {
@@ -137,6 +140,9 @@ export function subscribeKanban(onUpdate: (tasks: KanbanTask[]) => void): () => 
       /* ignore malformed frames */
     }
   })
+  if (onDisconnect) {
+    src.onerror = () => onDisconnect()
+  }
   return () => src.close()
 }
 

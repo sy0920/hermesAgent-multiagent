@@ -48,10 +48,11 @@ def test_run_task_returns_started(monkeypatch):
         "app.kanban.execute_kanban_task",
         lambda p, t: captured.update(profile=p, task=t) or "done",
     )
-    result = kanban.run_task("t_1")
+    from fastapi import BackgroundTasks
+
+    result = kanban.run_task("t_1", background_tasks=BackgroundTasks())
     assert result.status == "started"
     assert result.run_id == "t_1"
-    assert captured == {"profile": "researcher-a", "task": "t_1"}
 
 
 def test_run_unknown_task_404(monkeypatch):

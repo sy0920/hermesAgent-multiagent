@@ -28,10 +28,13 @@ export default function App() {
   }, [setExperts, setTeams, setTasks])
 
   useEffect(() => {
-    const stop = subscribeKanban((tasks) => {
-      setTasks(tasks)
-      setSseEnabled(true)
-    })
+    const stop = subscribeKanban(
+      (tasks) => {
+        setTasks(tasks)
+        setSseEnabled(true)
+      },
+      () => setSseEnabled(false),
+    )
     return stop
   }, [setTasks, setSseEnabled])
 

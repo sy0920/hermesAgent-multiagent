@@ -9,10 +9,10 @@ from __future__ import annotations
 
 import asyncio
 import json
-import uuid
+import logging
 from typing import AsyncIterator
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 from fastapi.responses import StreamingResponse
 
 from app.hermes_client import (
@@ -25,6 +25,8 @@ from app.hermes_client import (
 from app.schemas import KanbanRunResult, KanbanTask, KanbanTaskDetail
 
 router = APIRouter(prefix="/api")
+
+logger = logging.getLogger(__name__)
 
 POLL_INTERVAL_SECONDS = 3.0
 
@@ -70,8 +72,15 @@ def task_detail(task_id: str) -> KanbanTaskDetail:
     )
 
 
-def run_task(task_id: str) -> KanbanRunResult:
-    """Manually dispatch a worker for a task (MVP mode: no gateway wait)."""
+def run_task(task_id: str, background_tasks: BackgroundTasks | None = None) -> KanbanRunResult:
+    """Arm a worker run for a task.
+
+    The actual worker execution is scheduled onto ``background_tasks``
+    (FastAPI's background mechanism) so the HTTP request returns
+    immediately with status "started". When called without background
+    tasks (tests, synchronous contexts) a no-op scheduler arms nothing;
+    the routing layer always supplies one.
+    """
     try:
         row = kanban_show(task_id)
     except HermesError as exc:
@@ -79,10 +88,19 @@ def run_task(task_id: str) -> KanbanRunResult:
     assignee = row.get("assignee")
     if not assignee:
         raise HTTPException(status_code=400, detail="任务没有 assignee，无法执行")
-    # Run in a background loop via FastAPI's background tasks at the route
-    # layer; the core function itself just arms the call.
-    execute_kanban_task(assignee, task_id)
+    if background_tasks is not None:
+        background_tasks.add_task(_run_worker, assignee, task_id)
     return KanbanRunResult(run_id=task_id)
+
+
+def _run_worker(assignee: str, task_id: str) -> None:
+    """Background entrypoint; errors are captured and logged, never raised."""
+    try:
+        execute_kanban_task(assignee, task_id)
+    except HermesError as exc:
+        # Surfacing to the user happens through the kanban status/SSE;
+        # the worker failure is recorded on the task by Hermes itself.
+        logger.warning("kanban worker failed for %s: %s", task_id, exc)
 
 
 def unblock_task(task_id: str) -> dict:
@@ -94,17 +112,16 @@ def unblock_task(task_id: str) -> dict:
 
 
 async def _event_stream() -> AsyncIterator[str]:
-    """Poll the kanban list and push diff-snapshot updates as SSE."""
+    """Poll the kanban list (in a thread) and push diffs as SSE."""
     last = None
     while True:
         try:
-            snapshot = [t.model_dump() for t in list_tasks()]
+            snapshot = [t.model_dump() for t in await asyncio.to_thread(list_tasks)]
         except HermesError:
             snapshot = last or []
         if snapshot != last:
             last = snapshot
-            payload = {"type": "update", "tasks": snapshot}
-            yield f"event: update\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+            yield sse_frame(snapshot)
         await asyncio.sleep(POLL_INTERVAL_SECONDS)
 
 
@@ -124,8 +141,8 @@ def api_unblock(task_id: str):
 
 
 @router.post("/tasks/{task_id}/run", response_model=KanbanRunResult)
-def api_run_task(task_id: str):
-    return run_task(task_id)
+def api_run_task(task_id: str, background_tasks: BackgroundTasks):
+    return run_task(task_id, background_tasks=background_tasks)
 
 
 @router.get("/kanban/events")
@@ -135,3 +152,9 @@ async def api_kanban_events():
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+def sse_frame(tasks: list[dict]) -> str:
+    """Build a single SSE frame for a task snapshot (pure, testable)."""
+    payload = {"type": "update", "tasks": tasks}
+    return f"event: update\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"

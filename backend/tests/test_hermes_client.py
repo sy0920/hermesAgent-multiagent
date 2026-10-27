@@ -77,9 +77,27 @@ def test_kanban_list_tolerates_warning_prefix(monkeypatch):
     ]
 
 
-def test_kanban_list_json_parse_failure_raises(monkeypatch):
-    _patch(monkeypatch, _FakeResult(stdout="not json"))
-    with pytest.raises(HermesError, match="failed to parse"):
+def test_kanban_list_json_parse_failure_falls_back_to_text(monkeypatch):
+    """JSON failure falls back to text-table parsing instead of raising."""
+    outputs = iter(["not json", "● t_1 doing researcher-a 调研"])
+
+    def fake_run(*a, **k):
+        return _FakeResult(stdout=next(outputs))
+
+    monkeypatch.setattr("app.hermes_client.subprocess.run", fake_run)
+    tasks = kanban_list()
+    assert tasks and tasks[0]["id"] == "t_1"
+
+
+def test_kanban_list_unparseable_raises(monkeypatch):
+    """Both JSON and text parsing failing surfaces a HermesError."""
+    outputs = iter(["not json", "also not a table"])
+
+    def fake_run(*a, **k):
+        return _FakeResult(stdout=next(outputs))
+
+    monkeypatch.setattr("app.hermes_client.subprocess.run", fake_run)
+    with pytest.raises(HermesError):
         kanban_list()
 
 
