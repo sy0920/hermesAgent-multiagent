@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { expertChat } from '../api/client'
 import { useStore, expertNameById } from '../store'
+import Markdown from '../components/Markdown'
 
 interface Msg {
   role: 'user' | 'assistant'
@@ -75,7 +76,7 @@ export default function ExpertChat() {
               color: m.role === 'user' ? '#fff' : '#1f2329',
             }}
           >
-            {m.content}
+            <Markdown text={m.content} />
           </div>
         ))}
         <div ref={bottomRef} />
