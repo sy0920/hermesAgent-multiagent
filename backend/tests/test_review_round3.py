@@ -149,7 +149,7 @@ def test_advance_loop_dispatches_unblocked_ready(monkeypatch):
     monkeypatch.setattr("app.teams.kanban_list", lambda: rows)
     dispatched = []
     monkeypatch.setattr(
-        "app.teams.execute_kanban_task",
+        "app.teams._dispatch_worker_safe",
         lambda profile, task_id, **kw: dispatched.append((profile, task_id)) or "",
     )
 
@@ -166,7 +166,7 @@ def test_advance_loop_skips_non_ready(monkeypatch):
     monkeypatch.setattr("app.teams.kanban_list", lambda: rows)
     dispatched = []
     monkeypatch.setattr(
-        "app.teams.execute_kanban_task",
+        "app.teams._dispatch_worker_safe",
         lambda profile, task_id, **kw: dispatched.append((profile, task_id)) or "",
     )
     teams.advance_once()
@@ -183,7 +183,7 @@ def test_advance_loop_tracks_recent_dispatch(monkeypatch):
     monkeypatch.setattr("app.teams.kanban_list", lambda: rows)
     dispatched = []
     monkeypatch.setattr(
-        "app.teams.execute_kanban_task",
+        "app.teams._dispatch_worker_safe",
         lambda profile, task_id, **kw: dispatched.append((profile, task_id)) or "",
     )
     teams.advance_once()
@@ -204,7 +204,7 @@ def test_advance_loop_does_not_redispatch_on_failure(monkeypatch):
         attempts.append(task_id)
         raise HermesError("worker crashed")
 
-    monkeypatch.setattr("app.teams.execute_kanban_task", fail_then_track)
+    monkeypatch.setattr("app.teams._dispatch_worker_safe", fail_then_track)
     teams.advance_once()
     # Simulate the next loop tick: task still marked ready in Hermes.
     attempts.clear()

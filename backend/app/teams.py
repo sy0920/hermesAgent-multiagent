@@ -25,7 +25,6 @@ from fastapi import APIRouter, HTTPException
 
 from app.hermes_client import (
     HermesError,
-    execute_kanban_task,
     expert_chat,
     kanban_create,
     kanban_list,
@@ -67,7 +66,6 @@ INVOKE_WINDOW_SECONDS = 120.0
 _dispatched_once: set[str] = set()
 
 ADVANCE_INTERVAL_SECONDS = 5.0
-WORKER_DISPATCH_TIMEOUT_SECONDS = 180.0
 
 _PLAN_PROMPT = (
     "你是专家团{display_name}的团长。用户需求：{request}\n\n"
@@ -336,10 +334,22 @@ def advance_once() -> int:
 
 
 def _dispatch_worker_safe(assignee: str, task_id: str) -> None:
-    """Run a worker in a background thread; failures are logged, not raised."""
+    """Run a worker in a background thread; failures are logged, not raised.
+
+    Uses the single-shot LLM worker — exactly ONE model call per task, no
+    Hermes agent tool loop, token usage is bounded and cheap.
+    """
     try:
-        execute_kanban_task(assignee, task_id, timeout=WORKER_DISPATCH_TIMEOUT_SECONDS)
-    except HermesError as exc:
+        from app.llm_worker import dispatch_single_shot
+        from app.hermes_client import kanban_show, profile_soul_path
+
+        card = kanban_show(task_id)
+        work_dir = DEFAULT_WORKSPACE
+        card["workspace"] = work_dir
+        soul_path = Path(profile_soul_path(assignee))
+        soul_text = soul_path.read_text(encoding="utf-8") if soul_path.is_file() else ""
+        dispatch_single_shot(card=card, soul_text=soul_text)
+    except Exception as exc:  # noqa: BLE001 - background, log only
         logger.warning("auto-dispatch worker failed for %s: %s", task_id, exc)
 
 

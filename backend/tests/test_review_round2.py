@@ -68,7 +68,7 @@ def test_invoke_auto_dispatches_workers_in_parallel(monkeypatch):
 
     dispatched = []
     monkeypatch.setattr(
-        "app.teams.execute_kanban_task",
+        "app.teams._dispatch_worker_safe",
         lambda profile, task_id, **kw: dispatched.append((profile, task_id)) or "",
     )
 
