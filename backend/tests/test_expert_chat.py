@@ -93,7 +93,7 @@ def test_expert_chat_extracts_session_from_stdout(monkeypatch):
 
     class FakeProc:
         returncode = 0
-        stdout = "Query: 你好\n\n回复文本\n\nSession: local-abc123\n"
+        stdout = "Query: 你好\n\n☤ Hermes\n回复文本\n\nSession: local-abc123\n"
         stderr = ""
 
     monkeypatch.setattr(
@@ -114,9 +114,11 @@ def test_expert_chat_strips_thought_and_trailer(monkeypatch):
         returncode = 0
         stdout = (
             "Query: hi\n\n"
+            "The user asks in Chinese meanwhile the system wants tools...\n"
             "∴ Thought for 1s · the user greets\n"
             "☤ Hermes\n"
-            "你好！我是研究员。\n\n"
+            "你好！我是研究员。\n\n\n\n"
+            "我可以帮你做事：\n"
             "hermes --resume local-x -p researcher-a\n"
             "Title: hi\nDuration: 5s\nMessages: 2 (1 user, 0 tool calls)\n"
             "Session: local-x\n"
@@ -130,13 +132,31 @@ def test_expert_chat_strips_thought_and_trailer(monkeypatch):
     from app.hermes_client import expert_chat
 
     reply, sid = expert_chat("researcher-a", "hi", session_id=None)
-    assert "你好！我是研究员。" in reply
+    # Chain-of-thought (any prefix) must be gone — only reply after marker.
+    assert "The user asks" not in reply
     assert "Thought" not in reply
+    # Fresh reply body intact.
+    assert "你好！我是研究员。" in reply
+    assert "我可以帮你做事：" in reply
+    # Trailer + stats gone.
     assert "Title:" not in reply
     assert "Duration" not in reply
     assert "Messages" not in reply
     assert "hermes --resume" not in reply
+    # Blank runs collapsed (no triple newlines).
+    assert "\n\n\n" not in reply
     assert sid == "local-x"
+
+
+def test_extract_reply_fallback_without_marker():
+    """No ☤ marker → still returns content, dropping Query/chatter lines."""
+    from app.hermes_client import _extract_reply
+
+    out = "Query: hi\n⚠ some warning\n你好！\n\nTitle: hi\nDuration: 1s\n"
+    reply = _extract_reply(out)
+    assert "你好！" in reply
+    assert "Query:" not in reply
+    assert "Title:" not in reply
 
 
 def test_expert_chat_new_session_route_returns_nonnull_session(monkeypatch):

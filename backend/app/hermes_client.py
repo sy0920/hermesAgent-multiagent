@@ -302,26 +302,52 @@ def expert_chat(
             parsed_session = m.group(1).strip()
     effective_session = parsed_session or session_id
 
-    # Reply = the full assistant answer minus the CLI's own chatter: drop
-    # the "Query: ..." echo, the model's chain-of-thought lines, the
-    # resume/title/duration trailer, and the tool banner.
-    tail: list[str] = []
-    for ln in lines:
-        stripped = ln.strip()
-        if not stripped:
-            tail.append("")
-            continue
-        if stripped.startswith("Query:"):
-            continue
-        if stripped.startswith(("Session:", "Resume this session", "hermes --resume", "hermes -c", "Title:", "Duration:", "Messages:", "────────────────", "Moday:", "☤")):
-            continue
-        if "∴ Thought for" in stripped or stripped.startswith(("∴ ", "☤ Hermes")):
-            continue
-        if stripped.startswith(("Available Tools", "Available Skills", "Welcome to Hermes", "✦ Tip:")):
-            continue
-        tail.append(stripped)
-    reply = "\n".join(tail).strip()
+    reply = _extract_reply(stdout)
     return reply, effective_session
+
+
+def _extract_reply(stdout: str) -> str:
+    """Extract the assistant's reply from raw Hermes CLI output.
+
+    Anchors instead of guessing: the reply begins at the ``☤ Hermes``
+    marker line (the CLI's separator before the assistant response) and
+    ends at the session-statistics trailer (``hermes --resume`` /
+    ``Title:``). Any chain-of-thought printed *before* the marker is
+    discarded wholesale, and blank runs are collapsed.
+    """
+    lines = stdout.splitlines()
+
+    # Find the "☤ Hermes" marker — the start of the assistant reply.
+    start = None
+    for i, ln in enumerate(lines):
+        if "☤ Hermes" in ln:
+            start = i + 1
+            break
+    if start is None:
+        # No marker (plain CLI run): fall back to dropping known chatter.
+        start = 0
+
+    body: list[str] = []
+    for ln in lines[start:]:
+        stripped = ln.strip()
+        if stripped.startswith(("Title:", "Duration:", "Messages:", "────────────────", "Session:")):
+            break  # session-statistics trailer begins
+        if stripped.startswith(("Query:", "Resume this session", "hermes --resume", "hermes -c", "Available Tools", "Available Skills", "Welcome to Hermes", "✦ Tip:", "⚠", "Moday:")):
+            continue  # chatter lines to skip
+        body.append(stripped)
+
+    # Collapse 3+ consecutive blank lines to a single blank separator.
+    collapsed: list[str] = []
+    blank_run = 0
+    for ln in body:
+        if ln:
+            blank_run = 0
+            collapsed.append(ln)
+        else:
+            blank_run += 1
+            if blank_run == 1:
+                collapsed.append("")
+    return "\n".join(collapsed).strip()
 
 
 # ---------------------------------------------------------------------------
