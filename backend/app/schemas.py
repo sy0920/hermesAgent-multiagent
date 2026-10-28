@@ -65,3 +65,13 @@ class TeamOut(BaseModel):
 
 class TeamFinal(BaseModel):
     report: str | None = None
+
+
+class ChatRequest(BaseModel):
+    message: str = Field(min_length=1)
+    session_id: str | None = None
+
+
+class ChatResponse(BaseModel):
+    reply: str
+    session_id: str | None = None

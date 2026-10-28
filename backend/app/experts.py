@@ -12,8 +12,15 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 
-from app.hermes_client import HermesError, profile_create, profile_list, profile_soul_path, run_hermes
-from app.schemas import ExpertCreate, ExpertOut, SkillOut
+from app.hermes_client import (
+    HermesError,
+    expert_chat,
+    profile_create,
+    profile_list,
+    profile_soul_path,
+    run_hermes,
+)
+from app.schemas import ChatRequest, ChatResponse, ExpertCreate, ExpertOut, SkillOut
 
 router = APIRouter(prefix="/api")
 
@@ -238,3 +245,18 @@ def _parse_skill_frontmatter(text: str) -> tuple[str, str]:
                 elif line.startswith("description:"):
                     description = line.split(":", 1)[1].strip()
     return name or "unnamed", description
+
+
+def expert_chat_route(expert_id: str, payload: ChatRequest) -> ChatResponse:
+    """Chat with an expert profile; session_id enables multi-turn resume."""
+    if expert_id not in set(profile_list()):
+        raise HTTPException(status_code=404, detail=f"专家 {expert_id} 不存在")
+    reply = expert_chat(expert_id, payload.message, session_id=payload.session_id)
+    # The CLI may hand back an existing session id; return whichever is active.
+    session_id = payload.session_id
+    return ChatResponse(reply=reply, session_id=session_id)
+
+
+@router.post("/experts/{expert_id}/chat", response_model=ChatResponse)
+def api_expert_chat(expert_id: str, payload: ChatRequest):
+    return expert_chat_route(expert_id, payload)

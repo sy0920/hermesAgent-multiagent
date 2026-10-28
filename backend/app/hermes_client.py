@@ -242,6 +242,29 @@ def execute_kanban_task(
     )
 
 
+def expert_chat(
+    profile: str,
+    message: str,
+    session_id: str | None = None,
+    timeout: int = DEFAULT_TIMEOUT,
+) -> str:
+    """Chat with an expert profile; resume a session when session_id given.
+
+    Returns the assistant reply (non-empty trailing block), stripping any
+    CLI warning/session headers the model prints before the answer.
+    """
+    args = ["-p", profile, "chat"]
+    if session_id:
+        args += ["--resume", session_id]
+    args += ["-q", message]
+    stdout = run_hermes(args, timeout=timeout)
+    # Keep the last non-empty block; drop "Session: ..." header lines.
+    blocks = [ln.strip() for ln in stdout.splitlines() if ln.strip()]
+    if not blocks:
+        return ""
+    return "\n".join(blocks[-6:])
+
+
 # ---------------------------------------------------------------------------
 # Profiles (experts)
 # ---------------------------------------------------------------------------
