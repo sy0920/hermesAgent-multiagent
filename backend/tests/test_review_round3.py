@@ -211,3 +211,23 @@ def test_advance_loop_does_not_redispatch_on_failure(monkeypatch):
     teams.advance_once()
     assert attempts == [], "must not re-dispatch a task that already ran"
     teams._dispatched_once.clear()
+
+
+def test_build_from_plan_deduplicates_titles(monkeypatch):
+    """A duplicated title in the planner's plan creates only one task."""
+    created = []
+    monkeypatch.setattr(
+        "app.teams.kanban_create",
+        lambda title, **kw: created.append(title) or f"t_{len(created) - 1}",
+    )
+    plan = {
+        "tasks": [
+            {"title": "调研 AutoGen 架构", "assignee": "researcher-a", "parents": []},
+            {"title": "调研 AutoGen 架构", "assignee": "researcher-a", "parents": []},  # dup
+            {"title": "汇总报告", "assignee": "writer", "parents": [0], "final": True},
+        ]
+    }
+    final = teams._build_from_plan(plan, "调研 AutoGen")
+    assert created.count("调研 AutoGen 架构") == 1
+    assert len(created) == 2
+    assert final == "t_1"

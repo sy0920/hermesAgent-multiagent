@@ -169,15 +169,27 @@ def _team_workspace() -> str:
 
 def _build_from_plan(data: dict, fallback_request: str) -> str | None:
     """Create kanban tasks per the plan; return the final task id, or None
-    on creation failure."""
+    on creation failure.
+
+    Duplicate titles in the plan (the orchestrator occasionally repeats a
+    task) are collapsed to a single task — duplicated tasks caused the
+    same-second duplicate board rows seen in the field.
+    """
     ws = _team_workspace()
     try:
         ids: list[str] = []
         final_id: str | None = None
+        seen_titles: set[str] = set()
         for t in data["tasks"]:
-            parents = [ids[p] for p in (t.get("parents") or [])]
+            title = (t.get("title") or "").strip()
+            if not title:
+                continue
+            if title in seen_titles:
+                continue  # collapse duplicate planner output
+            seen_titles.add(title)
+            parents = [ids[p] for p in (t.get("parents") or []) if p < len(ids)]
             task_id = kanban_create(
-                t["title"],
+                title,
                 assignee=t["assignee"],
                 parent_ids=parents,
                 body=t.get("body") or f"需求: {fallback_request[:120]}",
