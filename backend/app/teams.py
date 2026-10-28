@@ -54,6 +54,12 @@ _recent_dispatch: dict[str, float] = {}
 # concurrent invokes (double-click, retries) cannot both build a tree.
 _invoke_lock = threading.RLock()
 
+# Memory-based idempotency: team_id -> (last root task id, timestamp).
+# Mirrors "an invoke happened recently" without scanning the kanban table,
+# so it cannot be fooled by board-state parse drift.
+_invoke_windows: dict[str, tuple[str, float]] = {}
+INVOKE_WINDOW_SECONDS = 120.0
+
 ADVANCE_INTERVAL_SECONDS = 5.0
 RECENT_DISPATCH_WINDOW_SECONDS = 120.0
 
@@ -231,37 +237,23 @@ def _build_default_tree(request: str, members: list[str], leader: str | None = N
     return final_id
 
 
-def _team_has_active_tasks(team: Team) -> str | None:
-    """Return the first active (non-done) task id for this team's members.
-
-    Used to make invoke idempotent: if the team already has in-flight work,
-    a re-invocation reuses it instead of creating a duplicate tree.
-    """
-    try:
-        rows = kanban_list()
-    except HermesError:
-        return None
-    active_states = {"ready", "running", "doing", "todo", "blocked", "in_progress"}
-    for row in rows:
-        if row.get("status") in active_states and row.get("assignee") in team.members:
-            return row.get("id")
-    return None
-
-
 def invoke_team(team_id: str, request: str) -> dict:
     """Ask the planner (team leader) for a task plan, then execute it.
 
-    Planner errors degrade to the default tree instead of failing loudly.
-    Idempotent + serialized: while the team has active tasks, re-invokes
-    reuse them; concurrent invokes are serialized so only one builds a tree.
+    Idempotency is memory-window based: within INVOKE_WINDOW_SECONDS after a
+    successful build, re-invokes reuse the last root task id (no kanban scan
+    involved — immune to table-parse drift). The lock serializes concurrent
+    invokes so only one builds.
     """
     with _invoke_lock:
         team = _get_team(team_id)
         orchestrator = team.leader
+        now = time.time()
 
-        existing = _team_has_active_tasks(team)
-        if existing:
-            return {"orchestrator_task_id": existing}
+        last = _invoke_windows.get(team_id)
+        if last is not None and now - last[1] < INVOKE_WINDOW_SECONDS:
+            # A tree was built recently for this team: reuse it.
+            return {"orchestrator_task_id": last[0]}
 
         final_id: str | None = None
         try:
@@ -283,6 +275,8 @@ def invoke_team(team_id: str, request: str) -> dict:
 
         if final_id is None:
             final_id = _build_default_tree(request, team.members, leader=team.leader)
+
+        _invoke_windows[team_id] = (final_id, time.time())
 
         # Auto-dispatch ready tasks in parallel (roots will run immediately).
         advance_once()

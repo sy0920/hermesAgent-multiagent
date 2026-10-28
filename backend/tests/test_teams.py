@@ -21,6 +21,7 @@ def _temp_team_store(tmp_path, monkeypatch):
             members=["researcher-a", "researcher-b", "reviewer", "writer"],
         )
     )
+    teams._invoke_windows.clear()
 
 
 def test_invoke_builds_task_tree(monkeypatch):
