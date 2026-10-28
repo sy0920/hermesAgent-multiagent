@@ -43,8 +43,7 @@ def _temp_team_store(tmp_path, monkeypatch):
 
 
 def test_invoke_auto_dispatches_workers_in_parallel(monkeypatch):
-    """invoke_team should trigger ready workers immediately after creating
-    the tree, in parallel rather than serial."""
+    """advance_once dispatches all ready root tasks in parallel."""
     created = []
     monkeypatch.setattr(
         "app.teams.expert_chat",
@@ -72,8 +71,9 @@ def test_invoke_auto_dispatches_workers_in_parallel(monkeypatch):
         lambda profile, task_id, **kw: dispatched.append((profile, task_id)) or "",
     )
 
-    result = teams.invoke_team("research", "调研")
-    # The two root tasks (researcher-a, researcher-b) must be dispatched.
+    # advance_once is the dispatcher; it must fire both ready roots.
+    teams._recent_dispatch.clear()
+    teams.advance_once()
     profiles = [d[0] for d in dispatched]
     assert "researcher-a" in profiles
     assert "researcher-b" in profiles

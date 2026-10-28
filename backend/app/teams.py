@@ -227,13 +227,35 @@ def _build_default_tree(request: str, members: list[str], leader: str | None = N
     return final_id
 
 
+def _team_has_active_tasks(team: Team) -> str | None:
+    """Return the first active (non-done) task id for this team's members.
+
+    Used to make invoke idempotent: if the team already has in-flight work,
+    a re-invocation reuses it instead of creating a duplicate tree.
+    """
+    try:
+        rows = kanban_list()
+    except HermesError:
+        return None
+    active_states = {"ready", "running", "doing", "todo", "blocked", "in_progress"}
+    for row in rows:
+        if row.get("status") in active_states and row.get("assignee") in team.members:
+            return row.get("id")
+    return None
+
+
 def invoke_team(team_id: str, request: str) -> dict:
     """Ask the planner (team leader) for a task plan, then execute it.
 
     Planner errors degrade to the default tree instead of failing loudly.
+    Idempotent: while the team has active tasks, re-invokes reuse them.
     """
     team = _get_team(team_id)
     orchestrator = team.leader
+
+    existing = _team_has_active_tasks(team)
+    if existing:
+        return {"orchestrator_task_id": existing}
 
     final_id: str | None = None
     try:
