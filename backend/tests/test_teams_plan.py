@@ -33,7 +33,10 @@ def _fake_create(created):
 
 
 def _stub_llm(monkeypatch, output):
-    monkeypatch.setattr("app.teams.run_hermes", lambda *a, **k: output)
+    monkeypatch.setattr(
+        "app.teams.expert_chat",
+        lambda p, m, session_id=None: (output, None),
+    )
 
 
 def test_invoke_uses_orchestrator_plan(monkeypatch):
@@ -127,10 +130,10 @@ def test_invoke_falls_back_when_orchestrator_fails(monkeypatch):
     created = []
     monkeypatch.setattr("app.teams.kanban_create", _fake_create(created))
 
-    def fail_run(*a, **k):
+    def fail_chat(p, m, session_id=None):
         raise HermesError("orchestrator crashed")
 
-    monkeypatch.setattr("app.teams.run_hermes", fail_run)
+    monkeypatch.setattr("app.teams.expert_chat", fail_chat)
     result = teams.invoke_team("research", "调研")
     assert len(created) == 4
     assert result["orchestrator_task_id"] == "t_3"

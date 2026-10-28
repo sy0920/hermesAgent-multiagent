@@ -12,11 +12,42 @@ import json
 import os
 import re
 import subprocess
+import time
 from pathlib import Path
 
 HERMES_BIN = os.environ.get("HERMES_BIN", "hermes")
 DEFAULT_TIMEOUT = 120
 WORKER_TIMEOUT = 600
+
+# Track per-profile gateway processes so we only warm once and can detect
+# a died gateway on the next call.
+_gateway_procs: dict[str, subprocess.Popen] = {}
+
+
+def ensure_gateway(profile: str, timeout: float = 3.0) -> None:
+    """Make sure the Hermes gateway for ``profile`` is running.
+
+    Hermes' ``chat`` command requires its gateway to be up; the first call
+    per profile spawns it (detached) and polls briefly, so subsequent
+    ``chat``/worker calls don't hit "Gateway starting: deadline".
+    """
+    existing = _gateway_procs.get(profile)
+    if existing is not None and existing.poll() is None:
+        return  # still alive
+    args = [HERMES_BIN, "-p", profile, "gateway", "start"]
+    try:
+        proc = subprocess.Popen(
+            args,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except (FileNotFoundError, OSError):
+        # Gateway warm-up is best-effort; the chat call itself will surface
+        # a clearer error if it truly can't start.
+        return
+    _gateway_procs[profile] = proc
+    time.sleep(timeout)
 
 
 class HermesError(RuntimeError):
@@ -225,6 +256,7 @@ def execute_kanban_task(
     ``extra_context`` (e.g. parent-task summaries) is appended to the
     worker prompt so downstream members see upstream outputs.
     """
+    ensure_gateway(profile)
     prompt = (
         f"You are the kanban worker for task {task_id}. "
         f"Work the kanban task:\n"
@@ -254,6 +286,7 @@ def expert_chat(
     ``Session:`` line (or echoed back from the caller), so the caller can
     resume the conversation on the next turn.
     """
+    ensure_gateway(profile)
     args = ["-p", profile, "chat"]
     if session_id:
         args += ["--resume", session_id]

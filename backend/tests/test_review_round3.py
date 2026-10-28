@@ -32,12 +32,21 @@ def test_execute_kanban_task_includes_completion_contract(monkeypatch):
         stdout = "done"
         stderr = ""
 
+    class FakeGateway:
+        def poll(self):
+            return None  # gateway "running"
+
+        def __init__(self, *a, **k):
+            pass
+
     def fake_run(args, **kwargs):
         captured["args"] = args
         captured["env"] = kwargs.get("env") or {}
         return FakeProc()
 
     monkeypatch.setattr("app.hermes_client.subprocess.run", fake_run)
+    monkeypatch.setattr("app.hermes_client.subprocess.Popen", FakeGateway)
+    monkeypatch.setattr("app.hermes_client.time.sleep", lambda s: None)
     execute_kanban_task("writer", "t_9", extra_context="上游摘要")
     joined = " ".join(str(x) for x in captured["args"])
     assert "kanban_complete" in joined

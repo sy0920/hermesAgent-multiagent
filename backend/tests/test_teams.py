@@ -27,8 +27,8 @@ def test_invoke_builds_task_tree(monkeypatch):
     """invoke deterministically builds the 4-task dependency tree."""
     created = []
     monkeypatch.setattr(
-        "app.teams.run_hermes",
-        lambda *args, **kwargs: "",
+        "app.teams.expert_chat",
+        lambda p, m, session_id=None: ("", None),  # planner silent → fallback
     )
     monkeypatch.setattr(
         "app.teams.kanban_create",

@@ -46,7 +46,10 @@ def test_invoke_auto_dispatches_workers_in_parallel(monkeypatch):
     """invoke_team should trigger ready workers immediately after creating
     the tree, in parallel rather than serial."""
     created = []
-    monkeypatch.setattr("app.teams.run_hermes", lambda *a, **k: "")
+    monkeypatch.setattr(
+        "app.teams.expert_chat",
+        lambda p, m, session_id=None: ("", None),  # planner silent → fallback
+    )
     monkeypatch.setattr(
         "app.teams.kanban_create",
         lambda title, **kw: created.append((title, kw)) or f"t_{len(created) - 1}",

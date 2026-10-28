@@ -26,10 +26,10 @@ from fastapi import APIRouter, HTTPException
 from app.hermes_client import (
     HermesError,
     execute_kanban_task,
+    expert_chat,
     kanban_create,
     kanban_list,
     kanban_show,
-    run_hermes,
 )
 from app.schemas import (
     KanbanTask,
@@ -239,19 +239,14 @@ def invoke_team(team_id: str, request: str) -> dict:
     final_id: str | None = None
     try:
         members = team.members
-        reply = run_hermes(
-            [
-                "-p",
-                orchestrator,
-                "chat",
-                "-q",
-                _PLAN_PROMPT.format(
-                    request=request,
-                    members=", ".join(members),
-                    display_name=team.display_name,
-                ),
-            ],
-            timeout=60,
+        reply, _ = expert_chat(
+            orchestrator,
+            _PLAN_PROMPT.format(
+                request=request,
+                members=", ".join(members),
+                display_name=team.display_name,
+            ),
+            session_id=None,
         )
         plan = _extract_plan(reply)
         if plan is not None and _validate_plan(plan, members):
