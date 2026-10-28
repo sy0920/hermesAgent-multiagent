@@ -34,3 +34,10 @@ export const useStore = create<AppState>((set) => ({
   setSseEnabled: (sseEnabled) => set({ sseEnabled }),
   setTeamFinal: (teamFinal) => set({ teamFinal }),
 }))
+
+// Map a profile id ("sql", "expert-1719...") to its display name.
+export function expertNameById(id: string | null | undefined): string {
+  if (!id) return '未分配'
+  const expert = useStore.getState().experts.find((e) => e.id === id)
+  return expert ? expert.display_name : id
+}

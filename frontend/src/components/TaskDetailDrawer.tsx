@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { KanbanTaskDetail } from '../api/client'
 import { fetchTask, runTask, unblockTask } from '../api/client'
+import { expertNameById } from '../store'
 
 export default function TaskDetailDrawer({
   taskId,
@@ -70,7 +71,7 @@ export default function TaskDetailDrawer({
       >
         <h3 style={{ marginTop: 0 }}>{detail?.title ?? taskId}</h3>
         <div style={{ fontSize: 12, color: '#86909c', marginBottom: 12 }}>
-          {detail?.id} · assignee: {detail?.assignee ?? '-'} · status: {detail?.status ?? '-'}
+          {detail?.id} · assignee: {expertNameById(detail?.assignee)} · status: {detail?.status ?? '-'}
         </div>
 
         <div className="card" style={{ marginBottom: 12 }}>

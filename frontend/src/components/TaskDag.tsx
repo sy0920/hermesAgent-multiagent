@@ -8,6 +8,7 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import type { KanbanTask } from '../api/client'
+import { expertNameById } from '../store'
 
 const STATUS_COLOR: Record<string, string> = {
   todo: '#c9cdd4',
@@ -57,7 +58,9 @@ export default function TaskDag({
         nodes.push({
           id: item.task.id,
           position: { x: depth * 260, y: idx * 110 - per / 2 },
-          data: { label: item.task.title },
+          data: {
+            label: `${expertNameById(item.task.assignee)}:\n${item.task.title}`,
+          },
           style: {
             border: `2px solid ${STATUS_COLOR[item.task.status] ?? '#c9cdd4'}`,
             borderRadius: 8,

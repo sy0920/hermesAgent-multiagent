@@ -1,4 +1,5 @@
 import type { KanbanTask } from '../api/client'
+import { expertNameById } from '../store'
 
 const COLUMNS = [
   { key: 'todo', label: '待办' },
@@ -50,7 +51,7 @@ export default function KanbanColumns({
               >
                 <div style={{ fontSize: 13, lineHeight: 1.4 }}>{t.title}</div>
                 <div style={{ display: 'flex', alignItems: 'center', marginTop: 6 }}>
-                  <span className="tag">{t.assignee ?? '未分配'}</span>
+                  <span className="tag">{expertNameById(t.assignee)}</span>
                   <span style={{ fontSize: 11, color: '#86909c', marginLeft: 'auto' }}>{t.id}</span>
                 </div>
               </div>
