@@ -303,8 +303,9 @@ def expert_chat(
     effective_session = parsed_session or session_id
 
     # Reply = the full assistant answer minus the CLI's own chatter: drop
-    # the "Query: ..." echo, warning lines, and the Session/Resume trailer.
-    tail = []
+    # the "Query: ..." echo, the model's chain-of-thought lines, the
+    # resume/title/duration trailer, and the tool banner.
+    tail: list[str] = []
     for ln in lines:
         stripped = ln.strip()
         if not stripped:
@@ -312,7 +313,11 @@ def expert_chat(
             continue
         if stripped.startswith("Query:"):
             continue
-        if stripped.startswith(("Session:", "Resume this session", "────────────────")):
+        if stripped.startswith(("Session:", "Resume this session", "hermes --resume", "hermes -c", "Title:", "Duration:", "Messages:", "────────────────", "Moday:", "☤")):
+            continue
+        if "∴ Thought for" in stripped or stripped.startswith(("∴ ", "☤ Hermes")):
+            continue
+        if stripped.startswith(("Available Tools", "Available Skills", "Welcome to Hermes", "✦ Tip:")):
             continue
         tail.append(stripped)
     reply = "\n".join(tail).strip()

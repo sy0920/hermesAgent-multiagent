@@ -107,6 +107,38 @@ def test_expert_chat_extracts_session_from_stdout(monkeypatch):
     assert "abc123" in (sid or "")
 
 
+def test_expert_chat_strips_thought_and_trailer(monkeypatch):
+    """Chain-of-thought lines and Hermes' stats trailer are cleaned out."""
+
+    class FakeProc:
+        returncode = 0
+        stdout = (
+            "Query: hi\n\n"
+            "∴ Thought for 1s · the user greets\n"
+            "☤ Hermes\n"
+            "你好！我是研究员。\n\n"
+            "hermes --resume local-x -p researcher-a\n"
+            "Title: hi\nDuration: 5s\nMessages: 2 (1 user, 0 tool calls)\n"
+            "Session: local-x\n"
+        )
+        stderr = ""
+
+    monkeypatch.setattr(
+        "app.hermes_client.subprocess.run",
+        lambda a, **k: FakeProc(),
+    )
+    from app.hermes_client import expert_chat
+
+    reply, sid = expert_chat("researcher-a", "hi", session_id=None)
+    assert "你好！我是研究员。" in reply
+    assert "Thought" not in reply
+    assert "Title:" not in reply
+    assert "Duration" not in reply
+    assert "Messages" not in reply
+    assert "hermes --resume" not in reply
+    assert sid == "local-x"
+
+
 def test_expert_chat_new_session_route_returns_nonnull_session(monkeypatch):
     """New conversations must produce a usable session_id (spec contract)."""
     monkeypatch.setattr(
