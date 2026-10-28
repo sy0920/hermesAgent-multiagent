@@ -90,7 +90,7 @@ def run_single_shot_worker(
     client = llm_client_factory(api_key, base_url, model)
     try:
         reply = client.chat_once(system_prompt, user_prompt)
-    except Exception as exc:  # noqa: BLE001 — single-shot, surface via log
+    except Exception:  # noqa: BLE001 — single-shot, fail without retry
         # One failed call is not worth retrying (token safety).
         return None
 
@@ -100,6 +100,14 @@ def run_single_shot_worker(
     safe_id = task_id.replace("/", "_")
     out_file = ws / f"{safe_id}.md"
     out_file.write_text(reply, encoding="utf-8")
+
+    # Mark the kanban task as done with a pointer to the result file.
+    try:
+        from app.task_result_store import mark_task_done
+
+        mark_task_done(task_id, str(out_file), summary=reply[:200])
+    except Exception:  # noqa: BLE001 — sidecar write must not fail the task
+        pass
     return reply
 
 

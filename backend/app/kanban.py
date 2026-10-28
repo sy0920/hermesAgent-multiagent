@@ -32,14 +32,22 @@ POLL_INTERVAL_SECONDS = 3.0
 
 
 def list_tasks() -> list[KanbanTask]:
-    """All tasks, with children derived from each task's parents."""
+    """All tasks, with children derived from each task's parents.
+
+    Completion marks from the sidecar result store are merged in so tasks
+    finished by the single-shot worker show as 'done' on the board.
+    """
     rows = kanban_list()
+    done_ids = _done_task_ids()
     task_map: dict[str, KanbanTask] = {}
     for row in rows:
+        status = row.get("status", "todo")
+        if row.get("id") in done_ids:
+            status = "done"
         task_map[row["id"]] = KanbanTask(
             id=row.get("id", ""),
             title=row.get("title", ""),
-            status=row.get("status", "todo"),
+            status=status,
             assignee=row.get("assignee"),
             parents=list(row.get("parents") or []),
         )
@@ -48,6 +56,24 @@ def list_tasks() -> list[KanbanTask]:
             if parent in task_map:
                 task_map[parent].children.append(task.id)
     return list(task_map.values())
+
+
+def _done_task_ids() -> set[str]:
+    """Task ids flagged done by the worker result store."""
+    try:
+        from pathlib import Path
+
+        p = Path.home() / ".hermes" / "task_results.json"
+        if not p.is_file():
+            return set()
+        data = json.loads(p.read_text(encoding="utf-8"))
+        return {
+            tid
+            for tid, r in data.items()
+            if isinstance(r, dict) and r.get("status") == "done"
+        }
+    except Exception:
+        return set()
 
 
 def task_detail(task_id: str) -> KanbanTaskDetail:

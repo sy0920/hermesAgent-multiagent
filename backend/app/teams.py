@@ -385,8 +385,33 @@ def team_tasks(team_id: str) -> list[KanbanTask]:
 
 
 def team_final(team_id: str) -> TeamFinal:
-    """Find the consolidated report: a done task whose metadata has 'final'."""
+    """Return the team's consolidated report.
+
+    Sources, in order:
+    1. the final task's persisted result file (single-shot worker wrote it)
+       — located via the invoke window's root id and the result store;
+    2. otherwise, a kanban metadata['final'] from a done task (legacy).
+    """
     _get_team(team_id)
+
+    # 1) Final task result file from the single-shot worker.
+    try:
+        from app.task_result_store import task_result
+
+        last = _invoke_windows.get(team_id)
+        if last:
+            final_task_id = last[0]
+            res = task_result(final_task_id)
+            if res and res.get("result_path"):
+                from pathlib import Path
+
+                p = Path(res["result_path"])
+                if p.is_file():
+                    return TeamFinal(report=p.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 - degrade to legacy path
+        pass
+
+    # 2) Legacy: kanban metadata['final'] on a done task.
     try:
         rows = kanban_list()
     except HermesError:

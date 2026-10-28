@@ -93,3 +93,36 @@ def test_worker_no_hermes_import():
     src = inspect.getsource(m)
     assert "import subprocess" not in src
     assert "hermes_client" not in src
+
+
+def test_worker_marks_done_and_team_final_reads_file(monkeypatch, tmp_path):
+    """End-to-end: worker result → done mark → team_final returns report."""
+    from app import teams
+    from app.task_result_store import TaskResultStore
+
+    results_p = tmp_path / "results.json"
+    monkeypatch.setattr("app.task_result_store.RESULTS_PATH", results_p)
+
+    class DoneLlm(FakeLlm):
+        def __init__(self):
+            super().__init__(reply="# 最终报告\n调研结论完整")
+
+    ws = tmp_path / "ws"
+    from app.llm_worker import run_single_shot_worker
+
+    run_single_shot_worker(
+        card={"id": "t_final", "title": "综合报告", "body": "汇总", "assignee": "writer", "workspace": str(ws)},
+        soul_text="# Persona\n写手",
+        model="deepseek-chat",
+        api_key="k",
+        base_url="https://api.deepseek.com/v1",
+        llm_client_factory=lambda *a, **k: DoneLlm(),
+    )
+    # Done mark present.
+    assert TaskResultStore().is_done("t_final")
+    # The stored result path points to a real file with the report content.
+    r = TaskResultStore().get_result("t_final")
+    from pathlib import Path
+
+    assert Path(r["result_path"]).exists()
+    assert "调研结论完整" in Path(r["result_path"]).read_text(encoding="utf-8")
