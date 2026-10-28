@@ -54,7 +54,7 @@ export default function TeamChat() {
   }, [teamFinal, id, doneInScope, setTeamFinal, tasks, scopedTasks])
 
   const invoke = async () => {
-    if (!request.trim() || !id) return
+    if (!request.trim() || !id || busy) return
     setBusy(true)
     setMsg(null)
     setTeamFinal(null)

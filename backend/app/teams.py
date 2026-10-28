@@ -176,19 +176,18 @@ def _build_from_plan(data: dict, fallback_request: str) -> str | None:
         return None
 
 
-def _build_default_tree(request: str, members: list[str]) -> str:
+def _build_default_tree(request: str, members: list[str], leader: str | None = None) -> str:
     """Deterministic fallback tree using the team's actual member roster.
 
-    Tech/case research goes to up to two available members, review to a
-    third, and the final report to the last; rolls over cyclically when a
-    team has fewer members so every assignee stays in the whitelist.
+    The leader (主理人) only orchestrates: it is excluded from the executor
+    pool. Tech/case research go to up to two members, review to a third,
+    and the final report to the last; rolls cyclically for small teams.
     """
-    if not members:
-        members = ["writer"]
+    executors = [m for m in members if m != leader] or ["writer"]
     ws = _team_workspace()
 
     def pick(offset: int) -> str:
-        return members[offset % len(members)]
+        return executors[offset % len(executors)]
 
     tech_a = pick(0)
     tech_b = pick(1)
@@ -255,7 +254,7 @@ def invoke_team(team_id: str, request: str) -> dict:
         final_id = None
 
     if final_id is None:
-        final_id = _build_default_tree(request, team.members)
+        final_id = _build_default_tree(request, team.members, leader=team.leader)
 
     # Auto-dispatch ready tasks in parallel (roots will run immediately).
     advance_once()

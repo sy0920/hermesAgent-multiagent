@@ -39,7 +39,9 @@ def test_invoke_builds_task_tree(monkeypatch):
     assert len(created) == 4
     assert result["orchestrator_task_id"] == "t_3"
     assert set(created[2][1]["parent_ids"]) == {"t_0", "t_1"}
-    assert created[3][1]["assignee"] == "writer"
+    # The leader (researcher-a) must not appear as any assignee.
+    assignees = set(a for _, kw in created if (a := kw.get("assignee")))
+    assert "researcher-a" not in assignees
 
 
 def test_invoke_unknown_team_404():

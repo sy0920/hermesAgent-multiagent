@@ -97,7 +97,7 @@ def test_build_default_tree_uses_shared_workspace(monkeypatch):
         return f"t_{len(captured)}"
 
     monkeypatch.setattr("app.teams.kanban_create", fake_create)
-    root = teams._build_default_tree("调研需求", ["sql", "reviewer", "writer"])
+    root = teams._build_default_tree("调研需求", ["sql", "reviewer", "writer"], leader=None)
     assert captured["workspace"], "task must use a persistent dir workspace"
     assert captured["workspace"].startswith("dir:"), captured["workspace"]
 
@@ -109,9 +109,21 @@ def test_build_default_tree_assignees_from_members(monkeypatch):
         "app.teams.kanban_create",
         lambda title, **kw: created.append(kw.get("assignee")) or "t_x",
     )
-    teams._build_default_tree("调研", ["sql", "reviewer", "writer"])
+    teams._build_default_tree("调研", ["sql", "reviewer", "writer"], leader="writer")
     assignees = set(a for a in created if a)
-    assert assignees <= {"sql", "reviewer", "writer"}
+    assert assignees <= {"sql", "reviewer"}
+    assert "writer" not in assignees, "leader must not execute tasks"
+
+
+def test_build_default_tree_without_leader(monkeypatch):
+    """No leader provided behaves like before (all members eligible)."""
+    created = []
+    monkeypatch.setattr(
+        "app.teams.kanban_create",
+        lambda title, **kw: created.append(kw.get("assignee")) or "t_x",
+    )
+    teams._build_default_tree("调研", ["a", "b", "c"], leader=None)
+    assert "a" in created
 
 
 # ---------------------------------------------------------------------------

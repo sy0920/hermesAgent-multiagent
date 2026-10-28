@@ -99,7 +99,7 @@ def test_invoke_falls_back_when_plan_unparseable(monkeypatch):
     # Default template: 4 tasks (tech, case, review, final).
     assert len(created) == 4
     assert result["orchestrator_task_id"] == "t_3"
-    assert created[3][1]["assignee"] == "writer"
+    assert created[3][1]["assignee"] != "researcher-a"  # leader not executor
 
 
 def test_invoke_falls_back_when_assignee_invalid(monkeypatch):
