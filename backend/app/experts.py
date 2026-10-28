@@ -27,7 +27,21 @@ def _skills_root() -> Path:
 
 
 def _slugify(name: str) -> str:
-    return re.sub(r"[^\w\u4e00-\u9fff-]+", "-", name.strip()).strip("-") or "expert"
+    """Produce a Hermes-valid profile id.
+
+    Hermes requires profile names to match ``[a-z0-9-_]``, starting with a
+    letter or digit, up to 64 chars. Chinese display names are stripped to
+    an ascii slug; if nothing survives we fall back to a timestamped id.
+    """
+    import unicodedata
+
+    # Decompose unicode (Chinese → NFKD, but those have no latin mapping) then
+    # keep only ascii alnum / underscore / hyphen, lowercase.
+    ascii_name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
+    slug = re.sub(r"[^a-z0-9_-]+", "-", ascii_name.lower()).strip("-")
+    if not slug:
+        slug = f"expert-{int(__import__('time').time())}"[:64]
+    return slug[:64].rstrip("-")
 
 
 def _avatar_for(name: str) -> str:
@@ -78,14 +92,25 @@ def _read_expert(profile_name: str, default_model: str = "deepseek-chat") -> Exp
     if not soul_path.is_file():
         return None
     sections = _parse_soul(soul_path.read_text(encoding="utf-8"))
-    persona_first = sections.get("persona", "").splitlines()[0].strip() if sections["persona"] else ""
-    display_name = persona_first[:20] if persona_first else profile_name
+    persona_lines = [
+        ln for ln in sections.get("persona", "").splitlines() if ln.strip()
+    ]
+    if len(persona_lines) >= 2:
+        # First line is the display name; the remainder is the persona.
+        display_name = persona_lines[0].strip()[:40]
+        persona = "\n".join(persona_lines[1:]).strip()
+    elif persona_lines:
+        display_name = persona_lines[0].strip()[:40]
+        persona = persona_lines[0].strip()
+    else:
+        display_name = profile_name
+        persona = ""
     status, model = _read_profile_status(profile_name)
     return ExpertOut(
         id=profile_name,
         display_name=display_name,
         avatar=_avatar_for(profile_name),
-        persona=sections["persona"],
+        persona=persona,
         expertise=sections["expertise"],
         prompt=sections["prompt"],
         model=model or default_model,
@@ -138,8 +163,9 @@ def create_expert(payload: ExpertCreate) -> ExpertOut:
 
     soul_path = Path(profile_soul_path(profile_name))
     soul_path.parent.mkdir(parents=True, exist_ok=True)
+    # Persona first line carries the display name so list_experts can show it.
     soul_text = (
-        f"# Persona\n{payload.persona}\n\n"
+        f"# Persona\n{payload.display_name}\n{payload.persona}\n\n"
         f"# Expertise\n{payload.expertise}\n\n"
         f"# Prompt\n{payload.prompt}\n"
     )

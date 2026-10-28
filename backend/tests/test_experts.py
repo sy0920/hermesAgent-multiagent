@@ -4,6 +4,7 @@ Calls the route functions directly (sync) because the sandbox blocks
 loopback sockets required by TestClient/ASGITransport.
 """
 
+import re
 from pathlib import Path
 
 import pytest
@@ -45,13 +46,15 @@ def test_create_expert_writes_soul_and_calls_profile(monkeypatch, tmp_path):
         skills=["code-review"],
     )
     expert = experts.create_expert(payload)
-    assert expert.id == "文档评审官"
+    # Chinese display name has no ascii slug -> a timestamped fallback id.
+    assert re.fullmatch(r"expert-\d+", expert.id)
     assert any(c[0] == "create" for c in calls)
-    soul = Path(
-        fake_home / ".hermes" / "profiles" / "文档评审官" / "SOUL.md"
-    ).read_text(encoding="utf-8")
+    # SOUL is written under the slug profile dir; persona carries name first.
+    soul_paths = list((fake_home / ".hermes" / "profiles").rglob("SOUL.md"))
+    assert len(soul_paths) == 1
+    soul = soul_paths[0].read_text(encoding="utf-8")
     assert "# Persona" in soul and "10年经验后端" in soul
-    assert "评审文档不写代码" in soul
+    assert "文档评审官" in soul
 
 
 def test_create_duplicate_profile_returns_409(monkeypatch, tmp_path):
@@ -115,3 +118,14 @@ def test_skills_endpoint_returns_list(monkeypatch, tmp_path):
     assert {"name": "code-review", "description": "代码评审方法论"} in [
         s.model_dump() for s in result
     ]
+
+
+def test_slugify_keeps_ascii_profile_names():
+    assert experts._slugify("SQL 调优专家") == "sql"
+    assert experts._slugify("sql-doctor") == "sql-doctor"
+    assert experts._slugify("Doc Reviewer") == "doc-reviewer"
+
+
+def test_slugify_falls_back_for_pure_chinese():
+    slug = experts._slugify("文档评审官")
+    assert re.fullmatch(r"expert-\d+", slug)
