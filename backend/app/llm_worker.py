@@ -120,10 +120,14 @@ def dispatch_single_shot(
 ) -> str | None:
     """Convenience wrapper reading credentials from environment by default."""
     env = os.environ
+    key = api_key or env.get("OPENAI_API_KEY", "")
+    url = base_url or env.get("OPENAI_BASE_URL", "https://api.deepseek.com/v1")
+    if not key:
+        raise ValueError("OPENAI_API_KEY 未设置——请在 dev.sh 环境或 ~/.hermes/.env 提供")
     return run_single_shot_worker(
         card=card,
         soul_text=soul_text,
         model=model or env.get("MODEL", "deepseek-chat"),
-        api_key=api_key or env.get("OPENAI_API_KEY", ""),
-        base_url=base_url or env.get("OPENAI_BASE_URL", "https://api.deepseek.com/v1"),
+        api_key=key,
+        base_url=url,
     )

@@ -7,6 +7,17 @@ ROOT="$(cd "$(dirname "$0")" && pwd)"
 BACKEND_PORT="${BACKEND_PORT:-8000}"
 FRONTEND_PORT="${FRONTEND_PORT:-3000}"
 
+# Load API credentials from the Hermes home .env so the single-shot LLM
+# worker (which reads OPENAI_API_KEY / OPENAI_BASE_URL from the env) works
+# without a separate export. Existing env vars take precedence.
+HERMES_DOTENV="$HOME/.hermes/.env"
+if [ -f "$HERMES_DOTENV" ]; then
+  set -a
+  # shellcheck disable=SC1090
+  . "$HERMES_DOTENV"
+  set +a
+fi
+
 echo "→ 启动后端 (uvicorn :${BACKEND_PORT})..."
 cd "$ROOT/backend"
 if ! python3 -c "import fastapi, uvicorn" 2>/dev/null; then

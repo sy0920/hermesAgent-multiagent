@@ -95,6 +95,18 @@ def test_worker_no_hermes_import():
     assert "hermes_client" not in src
 
 
+def test_dispatch_requires_api_key():
+    """Missing OPENAI_API_KEY fails loudly, not silently."""
+    import os
+    import pytest
+
+    os.environ.pop("OPENAI_API_KEY", None)
+    from app.llm_worker import dispatch_single_shot
+
+    with pytest.raises(ValueError, match="OPENAI_API_KEY"):
+        dispatch_single_shot(card={"id": "t", "title": "x", "body": "", "assignee": "a"}, soul_text="")
+
+
 def test_worker_marks_done_and_team_final_reads_file(monkeypatch, tmp_path):
     """End-to-end: worker result → done mark → team_final returns report."""
     from app import teams
