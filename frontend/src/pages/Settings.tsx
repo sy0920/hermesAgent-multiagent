@@ -46,10 +46,10 @@ export default function Settings() {
           <ul>
             <li><b>专家 = Hermes Profile</b>（SOUL.md 人设 + 独立模型 + skills 方法论）</li>
             <li><b>可视化看板 = Hermes Kanban</b>（任务树含依赖，状态 todo/doing/done/blocked）</li>
-            <li><b>专家团 = orchestrator 人物 + 任务分解</b>：团长拆解 → 成员并行执行 → 综合交付</li>
+            <li><b>专家团 = 成员专家任主理人（团长）</b>：团长拆解 → 成员并行执行 → 综合交付</li>
           </ul>
           <p style={{ color: '#86909c' }}>
-            可通过 scripts/bootstrap_experts.sh 加载预置的 4 个专家 + 1 个团长。
+            可通过 scripts/bootstrap_experts.sh 加载预置 4 个专家，再到"专家团中心"组建团队。
           </p>
         </div>
       </div>

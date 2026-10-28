@@ -247,22 +247,43 @@ def expert_chat(
     message: str,
     session_id: str | None = None,
     timeout: int = DEFAULT_TIMEOUT,
-) -> str:
+) -> tuple[str, str | None]:
     """Chat with an expert profile; resume a session when session_id given.
 
-    Returns the assistant reply (non-empty trailing block), stripping any
-    CLI warning/session headers the model prints before the answer.
+    Returns ``(reply, session_id)`` where session_id is parsed from the CLI's
+    ``Session:`` line (or echoed back from the caller), so the caller can
+    resume the conversation on the next turn.
     """
     args = ["-p", profile, "chat"]
     if session_id:
         args += ["--resume", session_id]
     args += ["-q", message]
     stdout = run_hermes(args, timeout=timeout)
-    # Keep the last non-empty block; drop "Session: ..." header lines.
-    blocks = [ln.strip() for ln in stdout.splitlines() if ln.strip()]
-    if not blocks:
-        return ""
-    return "\n".join(blocks[-6:])
+    lines = stdout.splitlines()
+
+    # Extract the "Session: <id>" line the CLI prints at the end.
+    parsed_session = None
+    for ln in lines:
+        m = re.search(r"(?:Session|session)\s*[::]\s*(\S+)", ln)
+        if m:
+            parsed_session = m.group(1).strip()
+    effective_session = parsed_session or session_id
+
+    # Reply = the full assistant answer minus the CLI's own chatter: drop
+    # the "Query: ..." echo, warning lines, and the Session/Resume trailer.
+    tail = []
+    for ln in lines:
+        stripped = ln.strip()
+        if not stripped:
+            tail.append("")
+            continue
+        if stripped.startswith("Query:"):
+            continue
+        if stripped.startswith(("Session:", "Resume this session", "────────────────")):
+            continue
+        tail.append(stripped)
+    reply = "\n".join(tail).strip()
+    return reply, effective_session
 
 
 # ---------------------------------------------------------------------------

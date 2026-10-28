@@ -113,7 +113,14 @@ export default function TaskDag({
 
   return (
     <div style={{ height: 480, border: '1px solid #e5e6eb', borderRadius: 10, background: '#fff' }}>
-      <ReactFlow nodes={nodes} edges={edges} fitView onNodeClick={(_, n) => onSelect(n.id)}>
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        fitView
+        onNodeClick={(_, n) => {
+          if (!n.id.startsWith('ph-')) onSelect(n.id)
+        }}
+      >
         <Background />
         <Controls />
       </ReactFlow>

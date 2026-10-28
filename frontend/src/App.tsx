@@ -12,7 +12,7 @@ import KanbanBoard from './pages/KanbanBoard'
 import Settings from './pages/Settings'
 
 const NAV_LINKS = [
-  { to: '/experts', label: '专家中心', end: true },
+  { to: '/experts', label: '专家中心', end: false },
   { to: '/teams', label: '专家团中心', end: false },
   { to: '/kanban', label: '看板', end: false },
   { to: '/settings', label: '配置', end: false },

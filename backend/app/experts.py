@@ -251,10 +251,11 @@ def expert_chat_route(expert_id: str, payload: ChatRequest) -> ChatResponse:
     """Chat with an expert profile; session_id enables multi-turn resume."""
     if expert_id not in set(profile_list()):
         raise HTTPException(status_code=404, detail=f"专家 {expert_id} 不存在")
-    reply = expert_chat(expert_id, payload.message, session_id=payload.session_id)
-    # The CLI may hand back an existing session id; return whichever is active.
-    session_id = payload.session_id
-    return ChatResponse(reply=reply, session_id=session_id)
+    reply, session_id = expert_chat(
+        expert_id, payload.message, session_id=payload.session_id
+    )
+    # session_id is either the caller's resume id or parsed from CLI output.
+    return ChatResponse(reply=reply, session_id=session_id or payload.session_id)
 
 
 @router.post("/experts/{expert_id}/chat", response_model=ChatResponse)

@@ -88,9 +88,21 @@ def test_build_default_tree_uses_shared_workspace(monkeypatch):
         return f"t_{len(captured)}"
 
     monkeypatch.setattr("app.teams.kanban_create", fake_create)
-    root = teams._build_default_tree("调研需求")
+    root = teams._build_default_tree("调研需求", ["sql", "reviewer", "writer"])
     assert captured["workspace"], "task must use a persistent dir workspace"
     assert captured["workspace"].startswith("dir:"), captured["workspace"]
+
+
+def test_build_default_tree_assignees_from_members(monkeypatch):
+    """I2: fallback tree assigns only with the team's own members."""
+    created = []
+    monkeypatch.setattr(
+        "app.teams.kanban_create",
+        lambda title, **kw: created.append(kw.get("assignee")) or "t_x",
+    )
+    teams._build_default_tree("调研", ["sql", "reviewer", "writer"])
+    assignees = set(a for a in created if a)
+    assert assignees <= {"sql", "reviewer", "writer"}
 
 
 # ---------------------------------------------------------------------------

@@ -45,6 +45,10 @@ export default function CreateTeamModal({
       setError('请至少选择一名成员')
       return
     }
+    if (!form.members.includes(form.leader)) {
+      setError('主理人必须是团队成员之一')
+      return
+    }
     setBusy(true)
     try {
       await createTeam(form)

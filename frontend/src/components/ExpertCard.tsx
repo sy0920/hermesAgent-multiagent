@@ -47,7 +47,14 @@ export default function ExpertCard({
         <span className="tag">🧠 {expert.model}</span>
       </div>
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
-        <button className="btn" onClick={() => onDelete(expert.id)} style={{ fontSize: 12 }}>
+        <button
+          className="btn"
+          onClick={(e) => {
+            e.stopPropagation()
+            onDelete(expert.id)
+          }}
+          style={{ fontSize: 12 }}
+        >
           删除
         </button>
       </div>

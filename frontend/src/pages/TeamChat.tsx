@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { fetchTeamFinal, fetchTeam } from '../api/client'
-import type { KanbanTask, Team } from '../api/client'
+import { fetchTeamFinal, fetchTeam, fetchTasks } from '../api/client'
+import type { Team } from '../api/client'
 import { useStore, expertNameById } from '../store'
 import TaskDag from '../components/TaskDag'
 import KanbanColumns from '../components/KanbanColumns'
@@ -37,7 +37,13 @@ export default function TeamChat() {
 
   const doneInScope = scopedTasks.some((t) => t.status === 'done')
 
-  // Auto-fetch the final report when a done task exists and none shown yet.
+  // Reset the global report when switching teams so a stale report from
+  // another team is never shown.
+  useEffect(() => {
+    setTeamFinal(null)
+  }, [id, setTeamFinal])
+
+  // Auto-fetch the final report whenever tasks change and a done task exists.
   useEffect(() => {
     if (teamFinal || !id || !doneInScope) return
     fetchTeamFinal(id)
@@ -45,7 +51,7 @@ export default function TeamChat() {
         if (r.report) setTeamFinal(r.report)
       })
       .catch(() => void 0)
-  }, [teamFinal, id, doneInScope, setTeamFinal])
+  }, [teamFinal, id, doneInScope, setTeamFinal, tasks, scopedTasks])
 
   const invoke = async () => {
     if (!request.trim() || !id) return
@@ -55,7 +61,8 @@ export default function TeamChat() {
     try {
       const { invokeTeam } = await import('../api/client')
       const { orchestrator_task_id } = await invokeTeam(id, request)
-      setMsg(`已发起，团长已建立任务树（根任务: ${orchestrator_task_id}）。任务将自动并行执行。`)
+      setMsg(`已发起，团长已建立任务树（最终交付任务: ${orchestrator_task_id}）。任务将自动并行执行。`)
+      fetchTasks().catch(() => void 0)
     } catch (e) {
       setMsg(`发起失败: ${(e as Error).message}`)
     } finally {

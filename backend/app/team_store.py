@@ -12,6 +12,7 @@ import os
 import re
 import time
 import unicodedata
+import uuid
 from pathlib import Path
 
 from pydantic import BaseModel, Field
@@ -49,6 +50,12 @@ def _slugify(name: str) -> str:
     return slug[:64].rstrip("-")
 
 
+def _create_avatar(name: str) -> str:
+    """Deterministic avatar from the team's name."""
+    n = sum(ord(c) for c in name)
+    return ["🧩", "🚀", "🛠️", "📊", "🎯", "🤖", "🧠", "👥"][n % 8]
+
+
 class TeamStore:
     """Read/write the teams.json registry."""
 
@@ -74,7 +81,7 @@ class TeamStore:
             ensure_ascii=False,
             indent=2,
         )
-        tmp = self._path.with_suffix(".json.tmp")
+        tmp = self._path.with_suffix(f".{uuid.uuid4().hex[:8]}.json.tmp")
         tmp.write_text(payload, encoding="utf-8")
         os.replace(tmp, self._path)
 
@@ -86,6 +93,7 @@ class TeamStore:
         team = Team(
             id=team_id,
             display_name=payload.display_name,
+            avatar=_create_avatar(payload.display_name),
             description=payload.description,
             leader=payload.leader,
             members=list(payload.members),

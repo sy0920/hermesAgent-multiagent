@@ -1,10 +1,10 @@
 """Expert-team orchestration (Planner/Executor split).
 
-An expert team is a named group of expert profiles driven by an
-orchestrator ("team lead"). The team lead is the *Planner*: it reads the
-user request and returns a structured JSON plan describing which tasks
-each member should do and how they depend on each other. The backend is
-the *Executor*: it turns that plan into kanban tasks and creates them.
+An expert team is a named group of expert profiles with one member serving
+as its leader (主理人). The leader is the *Planner*: it reads the user
+request and returns a structured JSON plan describing which tasks each
+member should do and how they depend on each other. The backend is the
+*Executor*: it turns that plan into kanban tasks and creates them.
 
 If the planner's output is unparsable, references an unknown member, or
 the orchestrator call fails, the executor falls back to a default tree so
@@ -176,34 +176,50 @@ def _build_from_plan(data: dict, fallback_request: str) -> str | None:
         return None
 
 
-def _build_default_tree(request: str) -> str:
-    """Deterministic fallback tree: tech + case -> review -> final report."""
+def _build_default_tree(request: str, members: list[str]) -> str:
+    """Deterministic fallback tree using the team's actual member roster.
+
+    Tech/case research goes to up to two available members, review to a
+    third, and the final report to the last; rolls over cyclically when a
+    team has fewer members so every assignee stays in the whitelist.
+    """
+    if not members:
+        members = ["writer"]
     ws = _team_workspace()
-    tech_id = kanban_create(
+
+    def pick(offset: int) -> str:
+        return members[offset % len(members)]
+
+    tech_a = pick(0)
+    tech_b = pick(1)
+    review = pick(2)
+    final = pick(3)
+
+    tech_a_id = kanban_create(
         f"调研: {request[:50]} (技术架构)",
-        assignee="researcher-a",
+        assignee=tech_a,
         body=f"输出到 {DEFAULT_WORKSPACE}/tech-research.md\n\n{request}",
         priority=2,
         workspace=ws,
     )
     case_id = kanban_create(
         f"调研: {request[:50]} (商业案例)",
-        assignee="researcher-b",
+        assignee=tech_b,
         body=f"输出到 {DEFAULT_WORKSPACE}/case-research.md\n\n{request}",
         priority=2,
         workspace=ws,
     )
     review_id = kanban_create(
         f"审核: {request[:50]} (质量把关)",
-        assignee="reviewer",
-        parent_ids=[tech_id, case_id],
+        assignee=review,
+        parent_ids=[tech_a_id, case_id],
         body=f"输出到 {DEFAULT_WORKSPACE}/review-report.md",
         priority=2,
         workspace=ws,
     )
     final_id = kanban_create(
         f"综合报告: {request[:50]}",
-        assignee="writer",
+        assignee=final,
         parent_ids=[review_id],
         body=f"输出最终报告到 {DEFAULT_WORKSPACE}/final-report.md",
         priority=1,
@@ -244,7 +260,7 @@ def invoke_team(team_id: str, request: str) -> dict:
         final_id = None
 
     if final_id is None:
-        final_id = _build_default_tree(request)
+        final_id = _build_default_tree(request, team.members)
 
     # Auto-dispatch ready tasks in parallel (roots will run immediately).
     advance_once()
