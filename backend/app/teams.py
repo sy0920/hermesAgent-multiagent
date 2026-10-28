@@ -35,22 +35,12 @@ from app.schemas import (
     KanbanTask,
     TeamFinal,
     TeamInvokeRequest,
-    TeamOut,
 )
+from app.team_store import Team, TeamCreate as TeamCreateCreate
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api")
-
-# The team lead is the orchestrator profile; members are derived from the
-# expert registry at request time (excludes the orchestrator itself).
-_TEAM_DEFS = [
-    {
-        "id": "research",
-        "display_name": "全栈研究团",
-        "orchestrator": "team-lead",
-    }
-]
 
 DEFAULT_WORKSPACE = os.environ.get(
     "HERMES_TEAM_WORKSPACE",
@@ -64,7 +54,7 @@ ADVANCE_INTERVAL_SECONDS = 5.0
 RECENT_DISPATCH_WINDOW_SECONDS = 120.0
 
 _PLAN_PROMPT = (
-    "你是全栈研究团的团长。用户需求：{request}\n\n"
+    "你是专家团{display_name}的团长。用户需求：{request}\n\n"
     "可以选择的成员：{members}\n\n"
     "请**只输出一个 JSON 计划**（不要解释、不要调用任何工具），用于把需求拆成任务。"
     "格式：\n"
@@ -78,36 +68,34 @@ _PLAN_PROMPT = (
 )
 
 
-def _registered_expert_ids() -> list[str]:
-    """All expert profile ids from the registry (used for team membership)."""
-    from app.experts import list_experts
+def _team_store() -> TeamStore:
+    from app.team_store import TeamStore
 
-    results = list_experts()
-    return [e.id for e in results]
+    return TeamStore()
 
 
-def _get_team(team_id: str) -> dict:
-    for team in _TEAM_DEFS:
-        if team["id"] == team_id:
-            members = [
-                m for m in _registered_expert_ids() if m != team["orchestrator"]
-            ]
-            if not members:
-                members = ["researcher-a", "researcher-b", "reviewer", "writer"]
-            team["members"] = members
-            return team
-    raise HTTPException(status_code=404, detail=f"专家团 {team_id} 不存在")
+def _get_team(team_id: str) -> Team:
+    team = _team_store().get(team_id)
+    if team is None:
+        raise HTTPException(status_code=404, detail=f"专家团 {team_id} 不存在")
+    return team
 
 
-def list_teams() -> list[TeamOut]:
-    return [
-        TeamOut(
-            id=t["id"],
-            display_name=t["display_name"],
-            members=_get_team(t["id"])["members"],
-        )
-        for t in _TEAM_DEFS
-    ]
+def list_teams() -> list[Team]:
+    return _team_store().load()
+
+
+def create_team(payload: TeamCreateCreate) -> Team:
+    if payload.leader not in payload.members:
+        raise HTTPException(status_code=422, detail="主理人必须是团队成员之一")
+    try:
+        return _team_store().create(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+def get_team(team_id: str) -> Team:
+    return _get_team(team_id)
 
 
 def _extract_plan(text: str) -> dict | None:
@@ -225,23 +213,27 @@ def _build_default_tree(request: str) -> str:
 
 
 def invoke_team(team_id: str, request: str) -> dict:
-    """Ask the planner (team lead) for a task plan, then execute it.
+    """Ask the planner (team leader) for a task plan, then execute it.
 
     Planner errors degrade to the default tree instead of failing loudly.
     """
     team = _get_team(team_id)
-    orchestrator = team["orchestrator"]
+    orchestrator = team.leader
 
     final_id: str | None = None
     try:
-        members = team["members"]
+        members = team.members
         reply = run_hermes(
             [
                 "-p",
                 orchestrator,
                 "chat",
                 "-q",
-                _PLAN_PROMPT.format(request=request, members=", ".join(members)),
+                _PLAN_PROMPT.format(
+                    request=request,
+                    members=", ".join(members),
+                    display_name=team.display_name,
+                ),
             ],
             timeout=60,
         )
@@ -353,9 +345,19 @@ def team_final(team_id: str) -> TeamFinal:
     return TeamFinal(report=None)
 
 
-@router.get("/teams", response_model=list[TeamOut])
+@router.get("/teams", response_model=list[Team])
 def api_list_teams():
     return list_teams()
+
+
+@router.post("/teams", response_model=Team, status_code=201)
+def api_create_team(payload: TeamCreateCreate):
+    return create_team(payload)
+
+
+@router.get("/teams/{team_id}", response_model=Team)
+def api_get_team(team_id: str):
+    return get_team(team_id)
 
 
 @router.post("/teams/{team_id}/invoke", response_model=dict)
