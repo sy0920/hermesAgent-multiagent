@@ -50,6 +50,10 @@ DEFAULT_WORKSPACE = os.environ.get(
 # Runtime bookkeeping for the advance loop (single-process, non-persistent).
 _recent_dispatch: dict[str, float] = {}
 
+# Serializes the "active-tasks check + build tree" critical section so two
+# concurrent invokes (double-click, retries) cannot both build a tree.
+_invoke_lock = threading.RLock()
+
 ADVANCE_INTERVAL_SECONDS = 5.0
 RECENT_DISPATCH_WINDOW_SECONDS = 120.0
 
@@ -248,40 +252,42 @@ def invoke_team(team_id: str, request: str) -> dict:
     """Ask the planner (team leader) for a task plan, then execute it.
 
     Planner errors degrade to the default tree instead of failing loudly.
-    Idempotent: while the team has active tasks, re-invokes reuse them.
+    Idempotent + serialized: while the team has active tasks, re-invokes
+    reuse them; concurrent invokes are serialized so only one builds a tree.
     """
-    team = _get_team(team_id)
-    orchestrator = team.leader
+    with _invoke_lock:
+        team = _get_team(team_id)
+        orchestrator = team.leader
 
-    existing = _team_has_active_tasks(team)
-    if existing:
-        return {"orchestrator_task_id": existing}
+        existing = _team_has_active_tasks(team)
+        if existing:
+            return {"orchestrator_task_id": existing}
 
-    final_id: str | None = None
-    try:
-        members = team.members
-        reply, _ = expert_chat(
-            orchestrator,
-            _PLAN_PROMPT.format(
-                request=request,
-                members=", ".join(members),
-                display_name=team.display_name,
-            ),
-            session_id=None,
-        )
-        plan = _extract_plan(reply)
-        if plan is not None and _validate_plan(plan, members):
-            final_id = _build_from_plan(plan, request)
-    except (HermesError, Exception):
-        final_id = None
+        final_id: str | None = None
+        try:
+            members = team.members
+            reply, _ = expert_chat(
+                orchestrator,
+                _PLAN_PROMPT.format(
+                    request=request,
+                    members=", ".join(members),
+                    display_name=team.display_name,
+                ),
+                session_id=None,
+            )
+            plan = _extract_plan(reply)
+            if plan is not None and _validate_plan(plan, members):
+                final_id = _build_from_plan(plan, request)
+        except (HermesError, Exception):
+            final_id = None
 
-    if final_id is None:
-        final_id = _build_default_tree(request, team.members, leader=team.leader)
+        if final_id is None:
+            final_id = _build_default_tree(request, team.members, leader=team.leader)
 
-    # Auto-dispatch ready tasks in parallel (roots will run immediately).
-    advance_once()
+        # Auto-dispatch ready tasks in parallel (roots will run immediately).
+        advance_once()
 
-    return {"orchestrator_task_id": final_id}
+        return {"orchestrator_task_id": final_id}
 
 
 def advance_once() -> int:
