@@ -17,7 +17,24 @@ import pytest
 from app import experts, kanban, teams
 from app.hermes_client import HermesError
 from app.schemas import ExpertCreate
+from app.team_store import TeamCreate
 from fastapi import BackgroundTasks, HTTPException
+
+
+@pytest.fixture(autouse=True)
+def _temp_team_store(tmp_path, monkeypatch):
+    """Provide a 'research' team for team-scoped tests."""
+    fake_home = tmp_path / "home"
+    (fake_home / ".hermes").mkdir(parents=True)
+    p = fake_home / ".hermes" / "teams.json"
+    monkeypatch.setattr("app.team_store.TEAMS_PATH", p)
+    teams._team_store().create(
+        TeamCreate(
+            display_name="research",
+            leader="researcher-a",
+            members=["researcher-a", "researcher-b", "reviewer", "writer"],
+        )
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -30,10 +47,6 @@ def test_invoke_auto_dispatches_workers_in_parallel(monkeypatch):
     the tree, in parallel rather than serial."""
     created = []
     monkeypatch.setattr("app.teams.run_hermes", lambda *a, **k: "")
-    monkeypatch.setattr(
-        "app.teams._registered_expert_ids",
-        lambda: ["researcher-a", "researcher-b", "reviewer", "writer"],
-    )
     monkeypatch.setattr(
         "app.teams.kanban_create",
         lambda title, **kw: created.append((title, kw)) or f"t_{len(created) - 1}",
@@ -65,10 +78,6 @@ def test_invoke_auto_dispatches_workers_in_parallel(monkeypatch):
 
 def test_team_final_aggregates_from_done_writer(monkeypatch):
     """team_final should read the writer task's metadata['final'] when done."""
-    monkeypatch.setattr(
-        "app.teams._registered_expert_ids",
-        lambda: ["researcher-a", "researcher-b", "reviewer", "writer"],
-    )
     monkeypatch.setattr(
         "app.teams.kanban_list",
         lambda: [

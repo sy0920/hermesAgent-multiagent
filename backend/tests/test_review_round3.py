@@ -54,14 +54,24 @@ def test_execute_kanban_task_includes_completion_contract(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_team_members_dynamic_from_experts(monkeypatch):
-    """Members come from the expert registry, not a hardcoded list."""
-    monkeypatch.setattr(
-        "app.teams._registered_expert_ids",
-        lambda: ["researcher-a", "researcher-b", "reviewer", "writer", "sql-doctor"],
+def test_team_members_from_store(tmp_path, monkeypatch):
+    """Members come from the persisted team (leader + chosen members)."""
+    from app.team_store import TeamCreate
+
+    fake_home = tmp_path / "home"
+    (fake_home / ".hermes").mkdir(parents=True)
+    p = fake_home / ".hermes" / "teams.json"
+    monkeypatch.setattr("app.team_store.TEAMS_PATH", p)
+    teams._team_store().create(
+        TeamCreate(
+            display_name="SQL团",
+            leader="sql",
+            members=["sql", "reviewer", "writer"],
+        )
     )
-    team = teams._get_team("research")
-    assert "sql-doctor" in team["members"]
+    team = teams._get_team("sql")
+    assert team.leader == "sql"
+    assert "sql" in team.members and "writer" in team.members
 
 
 # ---------------------------------------------------------------------------

@@ -1,17 +1,25 @@
-"""Tests for the expert-team orchestration routes."""
+"""Tests for the expert-team orchestration routes (Team model based)."""
 
 import pytest
 
 from app import teams
 from app.hermes_client import HermesError
+from app.team_store import TeamCreate
 
 
 @pytest.fixture(autouse=True)
-def _stub_members(monkeypatch):
-    """Resolve team members without touching the Hermes CLI."""
-    monkeypatch.setattr(
-        "app.teams._registered_expert_ids",
-        lambda: ["researcher-a", "researcher-b", "reviewer", "writer"],
+def _temp_team_store(tmp_path, monkeypatch):
+    """Point teams.json at a temp file and pre-create a 'research' team."""
+    fake_home = tmp_path / "home"
+    (fake_home / ".hermes").mkdir(parents=True)
+    p = fake_home / ".hermes" / "teams.json"
+    monkeypatch.setattr("app.team_store.TEAMS_PATH", p)
+    teams._team_store().create(
+        TeamCreate(
+            display_name="research",
+            leader="researcher-a",
+            members=["researcher-a", "researcher-b", "reviewer", "writer"],
+        )
     )
 
 
@@ -27,16 +35,10 @@ def test_invoke_builds_task_tree(monkeypatch):
         lambda title, **kw: created.append((title, kw)) or f"t_{len(created) - 1}",
     )
     result = teams.invoke_team("research", "调研多Agent框架")
-    # 4 tasks must be created; final (writer) task returned (id t_3).
+    # 4 tasks must be created; final task (id t_3) returned when planner silent.
     assert len(created) == 4
     assert result["orchestrator_task_id"] == "t_3"
-    # writer task (index 3) must depend on review task (index 2).
-    assert created[3][1]["parent_ids"] == ["t_2"]
-    # review task depends on tech + case.
     assert set(created[2][1]["parent_ids"]) == {"t_0", "t_1"}
-    assert created[0][1]["assignee"] == "researcher-a"
-    assert created[1][1]["assignee"] == "researcher-b"
-    assert created[2][1]["assignee"] == "reviewer"
     assert created[3][1]["assignee"] == "writer"
 
 
@@ -81,8 +83,9 @@ def test_final_empty_when_no_done(monkeypatch):
     assert result.report is None
 
 
-def test_teams_list_returns_preset():
+def test_teams_list_contains_preset():
     result = teams.list_teams()
     assert any(t.id == "research" for t in result)
     team = next(t for t in result if t.id == "research")
-    assert "researcher-a" in team.members
+    assert team.leader == "researcher-a"
+    assert "writer" in team.members

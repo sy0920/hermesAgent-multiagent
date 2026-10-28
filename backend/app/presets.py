@@ -45,16 +45,6 @@ PRESET_EXPERTS = [
         ),
         "model": "deepseek-chat",
     },
-    {
-        "name": "team-lead",
-        "persona": "全栈研究团团长（编排者）",
-        "expertise": "负责拆解任务、分配成员、整合交付；不亲自做调研/写作",
-        "prompt": (
-            "工作流程：1) 用 kanban_create 将需求拆成可并行子任务 2) 按成员擅长分配 "
-            "3) 检查依赖 4) 汇总交付。禁止越权执行成员任务。"
-        ),
-        "model": "deepseek-chat",
-    },
 ]
 
 
