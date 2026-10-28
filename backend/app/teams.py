@@ -60,8 +60,14 @@ _invoke_lock = threading.RLock()
 _invoke_windows: dict[str, tuple[str, float]] = {}
 INVOKE_WINDOW_SECONDS = 120.0
 
+# Guards against the token-burning retry loop that sank usage: a task is
+# dispatched by advance_once AT MOST ONCE per process. A worker that fails
+# or hangs must not be auto-re-queued — that was the runaway loop. Manual
+# re-dispatch stays available through the task detail "运行" button.
+_dispatched_once: set[str] = set()
+
 ADVANCE_INTERVAL_SECONDS = 5.0
-RECENT_DISPATCH_WINDOW_SECONDS = 120.0
+WORKER_DISPATCH_TIMEOUT_SECONDS = 180.0
 
 _PLAN_PROMPT = (
     "你是专家团{display_name}的团长。用户需求：{request}\n\n"
@@ -287,17 +293,17 @@ def invoke_team(team_id: str, request: str) -> dict:
 def advance_once() -> int:
     """Dispatch newly-ready tasks; return the number dispatched.
 
-    A task is dispatchable when its status is 'ready' and it has not been
-    dispatched within RECENT_DISPATCH_WINDOW_SECONDS. Dependencies are
-    handled by Hermes: a task stays blocked until its parents are done,
-    at which point it transitions to ready and this loop picks it up.
+    A task is dispatched at most once per process (``_dispatched_once``),
+    so a failing worker is NOT auto-re-queued — that loop was the runaway
+    token burn. Manual re-dispatch is available per task via the UI.
+    Dependencies are handled by Hermes: a task stays blocked until its
+    parents are done, at which point it becomes ready and is picked up.
     """
     try:
         rows = kanban_list()
     except HermesError:
         return 0
     dispatched = 0
-    now = time.time()
     for row in rows:
         if row.get("status") != "ready":
             continue
@@ -305,10 +311,9 @@ def advance_once() -> int:
         assignee = row.get("assignee")
         if not task_id or not assignee:
             continue
-        last = _recent_dispatch.get(task_id, 0.0)
-        if now - last < RECENT_DISPATCH_WINDOW_SECONDS:
-            continue
-        _recent_dispatch[task_id] = now
+        if task_id in _dispatched_once:
+            continue  # never auto-re-dispatch — token safety
+        _dispatched_once.add(task_id)
         threading.Thread(
             target=_dispatch_worker_safe,
             args=(assignee, task_id),
@@ -321,7 +326,7 @@ def advance_once() -> int:
 def _dispatch_worker_safe(assignee: str, task_id: str) -> None:
     """Run a worker in a background thread; failures are logged, not raised."""
     try:
-        execute_kanban_task(assignee, task_id, timeout=300)
+        execute_kanban_task(assignee, task_id, timeout=WORKER_DISPATCH_TIMEOUT_SECONDS)
     except HermesError as exc:
         logger.warning("auto-dispatch worker failed for %s: %s", task_id, exc)
 

@@ -73,7 +73,7 @@ def test_invoke_auto_dispatches_workers_in_parallel(monkeypatch):
     )
 
     # advance_once is the dispatcher; it must fire both ready roots.
-    teams._recent_dispatch.clear()
+    teams._dispatched_once.clear()
     teams.advance_once()
     profiles = [d[0] for d in dispatched]
     assert "researcher-a" in profiles

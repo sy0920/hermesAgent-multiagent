@@ -174,9 +174,9 @@ def test_advance_loop_skips_non_ready(monkeypatch):
 
 
 def test_advance_loop_tracks_recent_dispatch(monkeypatch):
-    """A task already dispatched recently is not re-dispatched."""
-    teams._recent_dispatch.clear()
-    teams._recent_dispatch["t_child"] = time.time()
+    """A task already dispatched once is never re-dispatched (token safety)."""
+    teams._dispatched_once.clear()
+    teams._dispatched_once.add("t_child")
     rows = [
         {"id": "t_child", "status": "ready", "assignee": "writer", "parents": []},
     ]
@@ -188,4 +188,26 @@ def test_advance_loop_tracks_recent_dispatch(monkeypatch):
     )
     teams.advance_once()
     assert dispatched == []
-    teams._recent_dispatch.clear()
+    teams._dispatched_once.clear()
+
+
+def test_advance_loop_does_not_redispatch_on_failure(monkeypatch):
+    """A failed worker must NOT be auto-re-queued (the runaway loop)."""
+    teams._dispatched_once.clear()
+    rows = [
+        {"id": "t_x", "status": "ready", "assignee": "researcher-a", "parents": []},
+    ]
+    monkeypatch.setattr("app.teams.kanban_list", lambda: rows)
+    attempts = []
+
+    def fail_then_track(profile, task_id, **kw):
+        attempts.append(task_id)
+        raise HermesError("worker crashed")
+
+    monkeypatch.setattr("app.teams.execute_kanban_task", fail_then_track)
+    teams.advance_once()
+    # Simulate the next loop tick: task still marked ready in Hermes.
+    attempts.clear()
+    teams.advance_once()
+    assert attempts == [], "must not re-dispatch a task that already ran"
+    teams._dispatched_once.clear()
