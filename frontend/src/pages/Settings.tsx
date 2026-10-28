@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useStore } from '../store'
+import { useStore, expertNameById } from '../store'
 import { fetchHealth } from '../api/client'
 
 export default function Settings() {
@@ -31,9 +31,12 @@ export default function Settings() {
           {teams.map((t) => (
             <div key={t.id} style={{ marginBottom: 8, fontSize: 13 }}>
               <div style={{ fontWeight: 600 }}>{t.display_name} ({t.id})</div>
-              <div style={{ color: '#86909c' }}>成员: {t.members.join('、')}</div>
+              <div style={{ color: '#86909c' }}>
+                👑 主理人: {expertNameById(t.leader)} · 成员: {t.members.map((m) => expertNameById(m)).join('、')}
+              </div>
             </div>
           ))}
+          {teams.length === 0 && <div style={{ color: '#86909c', fontSize: 13 }}>暂无专家团，请在"专家团中心"创建。</div>}
         </div>
       </div>
       <div className="card" style={{ marginTop: 16 }}>

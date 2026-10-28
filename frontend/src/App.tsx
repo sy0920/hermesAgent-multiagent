@@ -1,21 +1,24 @@
 import { useEffect } from 'react'
-import { useStore, type TabKey } from './store'
+import { NavLink, Navigate, Route, Routes } from 'react-router-dom'
+import { useStore } from './store'
 import { fetchExperts, fetchTasks, fetchTeams, subscribeKanban } from './api/client'
 import ExpertCenter from './pages/ExpertCenter'
-import ExpertTeam from './pages/ExpertTeam'
+import ExpertDetail from './pages/ExpertDetail'
+import ExpertChat from './pages/ExpertChat'
+import TeamCenter from './pages/TeamCenter'
+import TeamDetail from './pages/TeamDetail'
+import TeamChat from './pages/TeamChat'
 import KanbanBoard from './pages/KanbanBoard'
 import Settings from './pages/Settings'
 
-const TABS: { key: TabKey; label: string }[] = [
-  { key: 'experts', label: '专家中心' },
-  { key: 'team', label: '专家团' },
-  { key: 'kanban', label: '看板' },
-  { key: 'settings', label: '配置' },
+const NAV_LINKS = [
+  { to: '/experts', label: '专家中心', end: true },
+  { to: '/teams', label: '专家团中心', end: false },
+  { to: '/kanban', label: '看板', end: false },
+  { to: '/settings', label: '配置', end: false },
 ]
 
 export default function App() {
-  const activeTab = useStore((s) => s.activeTab)
-  const setActiveTab = useStore((s) => s.setActiveTab)
   const setExperts = useStore((s) => s.setExperts)
   const setTeams = useStore((s) => s.setTeams)
   const setTasks = useStore((s) => s.setTasks)
@@ -43,22 +46,30 @@ export default function App() {
       <header className="app-header">
         <span className="logo">🤖 Hermes 多 Agent 协作平台</span>
         <nav className="tabs">
-          {TABS.map((t) => (
-            <button
-              key={t.key}
-              className={`tab${activeTab === t.key ? ' active' : ''}`}
-              onClick={() => setActiveTab(t.key)}
+          {NAV_LINKS.map((l) => (
+            <NavLink
+              key={l.to}
+              to={l.to}
+              end={l.end}
+              className={({ isActive }) => `tab${isActive ? ' active' : ''}`}
             >
-              {t.label}
-            </button>
+              {l.label}
+            </NavLink>
           ))}
         </nav>
       </header>
       <main className="app-main">
-        {activeTab === 'experts' && <ExpertCenter />}
-        {activeTab === 'team' && <ExpertTeam />}
-        {activeTab === 'kanban' && <KanbanBoard />}
-        {activeTab === 'settings' && <Settings />}
+        <Routes>
+          <Route path="/" element={<Navigate to="/experts" replace />} />
+          <Route path="/experts" element={<ExpertCenter />} />
+          <Route path="/experts/:id" element={<ExpertDetail />} />
+          <Route path="/chat/expert/:id" element={<ExpertChat />} />
+          <Route path="/teams" element={<TeamCenter />} />
+          <Route path="/teams/:id" element={<TeamDetail />} />
+          <Route path="/chat/team/:id" element={<TeamChat />} />
+          <Route path="/kanban" element={<KanbanBoard />} />
+          <Route path="/settings" element={<Settings />} />
+        </Routes>
       </main>
     </div>
   )

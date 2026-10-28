@@ -41,25 +41,30 @@ bash dev.sh
 #    前端:  http://localhost:3000
 #    后端:  http://localhost:8000/docs
 
-# 3.（可选）加载预置的 4 个专家 + 1 个团长
+# 3.（可选）加载预置的 4 个专家
 bash scripts/bootstrap_experts.sh
 ```
 
 ## 使用流程
 
-### 专家中心
+### 专家中心（首页 /experts）
 - 查看专家卡片（头像/领域/技能/模型）
+- 点卡片 → 专家详情 → 「召唤专家」→ 进入与该专家的多轮对话页
 - 「+ 创建专家」填表 → 后端创建 Profile + SOUL.md + 绑定 skills
 
-### 专家团
-1. 输入需求（如"调研多智能体框架并输出报告"）
-2. 团长（team-lead）自动拆解 → kanban 建任务树
-3. 点「逐个执行待办任务」触发成员执行（MVP 手动模式）
-4. 看 DAG/看板实时流转，全部 done 后显示综合报告
+### 专家团中心（/teams）
+- 团队卡片网格（展示主理人 + 成员）
+- 「+ 创建专家团」→ 选主理人（团长，只调度）+ 成员
+- 点团队卡片 → 团队详情 → 「召唤专家团」→ 进入团队对话页
 
-### 看板
-- 列视图：todo / doing / done / blocked（按 assignee 着色）
-- DAG 视图：依赖关系图（parent→child，状态着色）
+### 专家团对话页（/chat/team/:id）
+1. 输入需求（如"调研多智能体框架并输出报告"）
+2. 团长（主理人）自动拆解 → kanban 建任务树
+3. 任务自动并行执行（推进循环），看板/DAG 仅显示本团成员任务
+4. 全部 done 后自动显示综合报告
+
+### 看板（/kanban）
+- 全局视角：列视图 todo/doing/done/blocked + DAG 视图
 - 点卡片：详情抽屉（body/summary/metadata/执行历史 + 运行/解封按钮）
 - SSE 自动实时刷新
 
@@ -69,7 +74,7 @@ bash scripts/bootstrap_experts.sh
 
 - **专家 = Profile**：`experts.py` 映射 Hermes Profile 管理与 SOUL.md
 - **看板 = kanban.db**：`kanban.py` 桥接 Hermes 原生 Kanban
-- **编排 = orchestrator + 任务树**：`teams.py` 复用 Hermes 拆解/依赖机制
+- **团队 = teams.json + 编排**：`teams.py` 持久化团队（主理人/成员），复用 Hermes 拆解/依赖机制
 
 迁移到 LakeAgent 时，仅需替换 `hermes_client.py` 中的 subprocess 调用为 LakeAgent 的 HTTP/内部 API，其余路由与前端可直接沿用。
 
@@ -78,21 +83,22 @@ bash scripts/bootstrap_experts.sh
 ```
 backend/
   app/
-    main.py           # FastAPI 入口 + CORS + health
+    main.py           # FastAPI 入口 + CORS + health + 推进循环启动
     hermes_client.py  # Hermes CLI 封装（单点改动）
     schemas.py        # Pydantic 模型
-    experts.py        # 专家 CRUD
+    team_store.py     # 团队持久化（teams.json CRUD）
+    experts.py        # 专家 CRUD + 专家对话（多轮会话）
     kanban.py         # 看板桥接 + SSE
-    teams.py          # 专家团编排
-    presets.py        # 预置专家/团长定义
+    teams.py          # 专家团编排（Planner/Executor + 推进循环）
+    presets.py        # 预置专家定义
   tests/              # pytest（沙箱可跑，mock subprocess）
   requirements.txt
 frontend/
   src/
     api/client.ts     # 类型化 REST + SSE client
     store.ts          # zustand 全局状态
-    pages/            # 4 Tab：专家中心/专家团/看板/配置
-    components/       # ExpertCard/Modal/KanbanColumns/DAG/DetailDrawer
+    pages/            # 专家中心/详情/对话、团队中心/详情/对话、看板、配置
+    components/       # ExpertCard/CreateExpertModal/CreateTeamModal/KanbanColumns/DAG/DetailDrawer
 scripts/
   bootstrap_experts.sh # 预置专家一键加载
 ```

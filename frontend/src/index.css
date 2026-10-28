@@ -45,6 +45,8 @@ body {
   color: #4e5969;
   background: transparent;
   border: none;
+  text-decoration: none;
+  display: inline-block;
 }
 
 .app-header .tab:hover {

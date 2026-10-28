@@ -57,12 +57,6 @@ class TeamInvokeRequest(BaseModel):
     request: str = Field(min_length=1)
 
 
-class TeamOut(BaseModel):
-    id: str
-    display_name: str
-    members: list[str] = Field(default_factory=list)
-
-
 class TeamFinal(BaseModel):
     report: str | None = None
 

@@ -52,6 +52,30 @@ export default function TaskDag({
       byDepth.get(depth)!.push({ task, depth })
     }
     const nodes: Node[] = []
+    const knownIds = new Set(tasks.map((t) => t.id))
+    // Placeholder nodes for parents not in this filtered view (dangling edges).
+    const placeholderIds = new Set<string>()
+    for (const task of tasks) {
+      for (const parent of task.parents) {
+        if (!knownIds.has(parent)) placeholderIds.add(parent)
+      }
+    }
+    ;[...placeholderIds].forEach((pid, idx) => {
+      nodes.push({
+        id: `ph-${pid}`,
+        position: { x: -10, y: 500 + idx * 40 },
+        data: { label: `…其他团队任务 ${pid}` },
+        style: {
+          border: '1px dashed #c9cdd4',
+          borderRadius: 8,
+          padding: 6,
+          background: '#fafbfc',
+          fontSize: 11,
+          color: '#86909c',
+          maxWidth: 180,
+        },
+      })
+    })
     for (const [depth, group] of byDepth) {
       const per = (group.length - 1) * 90
       group.forEach((item, idx) => {
@@ -77,9 +101,10 @@ export default function TaskDag({
       for (const parent of task.parents) {
         edges.push({
           id: `${parent}-${task.id}`,
-          source: parent,
+          source: knownIds.has(parent) ? parent : `ph-${parent}`,
           target: task.id,
           animated: task.status === 'doing',
+          style: knownIds.has(parent) ? undefined : { strokeDasharray: '4 2' },
         })
       }
     }

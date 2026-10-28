@@ -1,17 +1,13 @@
 import { create } from 'zustand'
 import type { Expert, KanbanTask, Team } from './api/client'
 
-export type TabKey = 'experts' | 'team' | 'kanban' | 'settings'
-
 interface AppState {
-  activeTab: TabKey
   experts: Expert[]
   teams: Team[]
   tasks: KanbanTask[]
   sseEnabled: boolean
   teamFinal: string | null
 
-  setActiveTab: (tab: TabKey) => void
   setExperts: (experts: Expert[]) => void
   setTeams: (teams: Team[]) => void
   setTasks: (tasks: KanbanTask[]) => void
@@ -20,14 +16,12 @@ interface AppState {
 }
 
 export const useStore = create<AppState>((set) => ({
-  activeTab: 'experts',
   experts: [],
   teams: [],
   tasks: [],
   sseEnabled: false,
   teamFinal: null,
 
-  setActiveTab: (tab) => set({ activeTab: tab }),
   setExperts: (experts) => set({ experts }),
   setTeams: (teams) => set({ teams }),
   setTasks: (tasks) => set({ tasks }),

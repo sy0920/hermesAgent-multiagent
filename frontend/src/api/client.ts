@@ -46,7 +46,23 @@ export interface KanbanTaskDetail extends KanbanTask {
 export interface Team {
   id: string
   display_name: string
+  avatar: string
+  description: string
+  leader: string
   members: string[]
+  created_at?: string
+}
+
+export interface TeamCreate {
+  display_name: string
+  description?: string
+  leader: string
+  members: string[]
+}
+
+export interface ChatResponse {
+  reply: string
+  session_id: string | null
 }
 
 export interface TeamFinal {
@@ -107,6 +123,25 @@ export function unblockTask(id: string): Promise<{ ok: boolean }> {
 
 export function fetchTeams(): Promise<Team[]> {
   return request('/teams')
+}
+
+export function createTeam(payload: TeamCreate): Promise<Team> {
+  return request('/teams', { method: 'POST', body: JSON.stringify(payload) })
+}
+
+export function fetchTeam(teamId: string): Promise<Team> {
+  return request(`/teams/${teamId}`)
+}
+
+export function expertChat(
+  expertId: string,
+  message: string,
+  sessionId?: string | null,
+): Promise<ChatResponse> {
+  return request(`/experts/${encodeURIComponent(expertId)}/chat`, {
+    method: 'POST',
+    body: JSON.stringify({ message, session_id: sessionId ?? null }),
+  })
 }
 
 export function invokeTeam(

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import type { Expert } from '../api/client'
 import { deleteExpert, fetchExperts, fetchSkills, fetchTeams } from '../api/client'
 import { useStore } from '../store'
@@ -10,6 +11,7 @@ export default function ExpertCenter() {
   const setExperts = useStore((s) => s.setExperts)
   const setTeams = useStore((s) => s.setTeams)
   const [showCreate, setShowCreate] = useState(false)
+  const navigate = useNavigate()
 
   const refresh = () => fetchExperts().then(setExperts).catch(console.error)
   const refreshTeams = () => fetchTeams().then(setTeams).catch(console.error)
@@ -28,6 +30,10 @@ export default function ExpertCenter() {
     }
   }
 
+  const handleOpen = (e: Expert) => {
+    navigate(`/experts/${e.id}`)
+  }
+
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
@@ -44,10 +50,12 @@ export default function ExpertCenter() {
         }}
       >
         {experts.map((e) => (
-          <ExpertCard key={e.id} expert={e} onDelete={handleDelete} />
+          <div key={e.id} style={{ cursor: 'pointer' }} onClick={() => handleOpen(e)}>
+            <ExpertCard expert={e} onDelete={handleDelete} />
+          </div>
         ))}
         {experts.length === 0 && (
-          <p style={{ color: '#86909c' }}>暂无专家。点击右上角「+ 创建专家」开始。可先运行 scripts/bootstrap_experts.sh 加载预置 5 个专家。</p>
+          <p style={{ color: '#86909c' }}>暂无专家。点击右上角「+ 创建专家」开始。</p>
         )}
       </div>
       {showCreate && (
@@ -56,7 +64,7 @@ export default function ExpertCenter() {
           onCreated={() => {
             setShowCreate(false)
             refresh()
-            refreshTeams() // 新专家加入后专家团成员同步更新
+            refreshTeams()
           }}
         />
       )}
