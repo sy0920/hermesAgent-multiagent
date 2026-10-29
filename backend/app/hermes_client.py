@@ -274,6 +274,34 @@ def execute_kanban_task(
     )
 
 
+def chat_budgeted(
+    profile: str,
+    message: str,
+    *,
+    max_turns: int,
+    run_budget: int = 300,
+    toolsets: list[str] | None = None,
+    timeout: int | None = None,
+) -> str:
+    """Token-safe single-shot call with explicit budgets.
+
+    Dispatch a Hermes agent instance for AT MOST ``max_turns`` tool-calling
+    iterations within ``run_budget`` seconds, restricted to ``toolsets``.
+    This is THE entry point for scheduler executor/leader calls — nothing
+    else should run an expert as a full agent.
+    """
+    ensure_gateway(profile)
+    args = [
+        "-p", profile, "chat", "-Q",
+        "--max-turns", str(max_turns),
+        "--run-budget", str(run_budget),
+    ]
+    if toolsets:
+        args += ["-t", ",".join(toolsets)]
+    args += ["-q", message]
+    return run_hermes(args, timeout=timeout or (run_budget + 30))
+
+
 def expert_chat(
     profile: str,
     message: str,
