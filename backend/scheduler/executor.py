@@ -14,7 +14,9 @@ from app.hermes_client import chat_budgeted
 
 EXECUTOR_MAX_TURNS = 10
 EXECUTOR_RUN_SECONDS = 180
-TOOLSET_WHITELIST = ["file", "skills", "terminal"]
+# Experts need web tools to research; file/skills/terminal are the safe core.
+# (delegate / kanban / send_message remain excluded to bound scope.)
+TOOLSET_WHITELIST = ["file", "skills", "terminal", "web"]
 
 
 class ExpertExecutionError(RuntimeError):

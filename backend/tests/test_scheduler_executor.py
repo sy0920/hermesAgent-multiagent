@@ -41,9 +41,9 @@ def test_run_expert_failure_raises(monkeypatch):
 def test_run_expert_constants():
     assert EXECUTOR_MAX_TURNS == 10
     assert EXECUTOR_RUN_SECONDS == 180
-    assert "delegate" not in " ".join(TOOLSET_WHITELIST)
-    assert "kanban" not in " ".join(TOOLSET_WHITELIST)
-    assert "send_message" not in " ".join(TOOLSET_WHITELIST)
+    assert "web" in TOOLSET_WHITELIST, "experts need web tools to research"
+    for banned in ("delegate", "kanban", "send_message"):
+        assert banned not in TOOLSET_WHITELIST, f"{banned} must never be whitelisted"
 
 
 def test_run_expert_only_via_chat_budgeted(monkeypatch):
