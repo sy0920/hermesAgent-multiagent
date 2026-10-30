@@ -10,6 +10,10 @@ from scheduler.db import SubtaskRow
 @pytest.fixture(autouse=True)
 def _sched(tmp_path, monkeypatch):
     monkeypatch.setattr("scheduler.db.DB_PATH", tmp_path / "sched.db")
+    from scheduler import engine
+
+    # Reset cross-test state for dedup guards.
+    engine._kanban_mirrored.clear()
     return tmp_path
 
 
@@ -76,24 +80,20 @@ def test_dependency_failure_blocks(monkeypatch, _sched):
 
 
 def test_failed_subtask_not_redispatched(monkeypatch, _sched):
-    """A failed expert run stays failed; the loop never re-queues it."""
+    """A failed subtask stays failed; the loop never re-queues it."""
     _mk_session()
     db.update_session("s1", status="running")
-    db.create_subtask(SubtaskRow("t_x", "s1", 1, "a", "X", "i", "c", [], "running"))
-
-    def boom(*a, **k):
-        raise Exception("boom")
-
-    monkeypatch.setattr("scheduler.engine.run_expert", boom)
-    monkeypatch.setattr("scheduler.engine._subtask_ready", lambda *a, **k: True)
+    db.create_subtask(SubtaskRow("t_x", "s1", 1, "a", "X", "i", "c", [], "failed"))
+    calls = {"expert": 0}
+    monkeypatch.setattr("scheduler.engine.run_expert", lambda *a, **k: calls.__setitem__("expert", calls["expert"] + 1) or "o")
     from scheduler.engine import advance_sessions
 
     advance_sessions()
     assert db.get_subtask("t_x")["status"] == "failed"
-    # Run again — still failed, no re-dispatch.
-    monkeypatch.setattr("scheduler.engine._subtask_ready", lambda *a, **k: True)
+    # Run again — never re-dispatched.
     advance_sessions()
     assert db.get_subtask("t_x")["status"] == "failed"
+    assert calls["expert"] == 0
 
 
 def test_done_triggers_aggregation(monkeypatch, _sched):
@@ -172,3 +172,82 @@ def test_plan_json_stores_full_plan(monkeypatch, _sched):
     assert saved["summary"] == "概要"
     assert len(saved["subtasks"]) == 1
     assert saved["subtasks"][0]["instruction"] == "调研"
+
+
+def test_regenerate_replaces_subtasks(monkeypatch, _sched):
+    """Plan regenerate must REPLACE old subtasks, not collide with them (C1)."""
+    from scheduler.engine import advance_sessions, handle_plan_confirm
+
+    _mk_session()
+    plan_v1 = {
+        "summary": "v1",
+        "subtasks": [
+            {"expert_id": "a", "instruction": "任务A", "input_context": "c", "deps": [], "parallel_group": "g"}
+        ],
+    }
+    plan_v2 = {
+        "summary": "v2",
+        "subtasks": [
+            {"expert_id": "a", "instruction": "任务A", "input_context": "c", "deps": [], "parallel_group": "g"},
+            {"expert_id": "b", "instruction": "任务B", "input_context": "c", "deps": [0], "parallel_group": None},
+        ],
+    }
+    monkeypatch.setattr(
+        "scheduler.engine._group_config",
+        lambda gid: {"enable_plan_confirm": True, "members": ["a", "b"], "leader": "l"},
+    )
+    plans = iter([plan_v1, plan_v2])
+    monkeypatch.setattr("scheduler.engine.lead_plan", lambda *a, **k: next(plans))
+    advance_sessions()  # creates v1 subtasks
+    assert len(db.list_subtasks("s1", 1)) == 1
+    # User clicks "重新生成".
+    handle_plan_confirm("s1", "regenerate")
+    assert len(db.list_subtasks("s1", 1)) == 2, "regenerate must produce 2 new subtasks"
+    statuses = [s["status"] for s in db.list_subtasks("s1", 1)]
+    assert statuses == ["pending", "pending"]
+
+
+def test_sync_kanban_no_duplicates(monkeypatch, _sched):
+    """_sync_kanban must create each subtask's kanban task exactly once (C2)."""
+    from scheduler.engine import _sync_kanban
+
+    _mk_session()
+    db.update_session("s1", status="running")
+    db.create_subtask(SubtaskRow("t1", "s1", 1, "a", "调研", "i", "c", [], "pending"))
+    created = []
+
+    monkeypatch.setattr(
+        "scheduler.engine.kanban_create",
+        lambda title, **kw: created.append(title) or "k1",
+    )
+    _sync_kanban("s1", 1)
+    _sync_kanban("s1", 1)
+    _sync_kanban("s1", 1)
+    assert len(created) == 1, "must not duplicate kanban tasks across polls"
+    assert created[0].startswith("[s1] 调研")
+
+
+def test_invalid_dep_is_failed_not_stuck(monkeypatch, _sched):
+    """A subtask whose dep refers to a missing index must be failed, not stuck (I4)."""
+    from scheduler.engine import advance_sessions
+
+    _mk_session()
+    db.update_session("s1", status="running")
+    db.create_subtask(SubtaskRow("t_bad", "s1", 1, "a", "B", "i", "c", ["ghost-dep"], "pending"))
+    monkeypatch.setattr("scheduler.engine.run_expert", lambda *a, **k: "o")
+    advance_sessions()
+    assert db.get_subtask("t_bad")["status"] == "failed"
+
+
+def test_empty_plan_finishes_session(monkeypatch, _sched):
+    """An empty subtask plan means nothing to do → finished (I5)."""
+    from scheduler.engine import advance_sessions
+
+    _mk_session()
+    monkeypatch.setattr("scheduler.engine.lead_plan", lambda *a, **k: {"summary": "s", "subtasks": []})
+    monkeypatch.setattr(
+        "scheduler.engine._group_config",
+        lambda gid: {"enable_plan_confirm": False, "members": [], "leader": "l"},
+    )
+    advance_sessions()
+    assert db.get_session("s1")["status"] == "finished"

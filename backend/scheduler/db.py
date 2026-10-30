@@ -226,3 +226,15 @@ def list_subtasks(session_id: str, round_no: int | None = None) -> list[dict]:
                     "SELECT * FROM subtasks WHERE session_id=?", (session_id,)
                 ).fetchall()
     return [_row_to_dict(r) for r in rows]
+
+
+def delete_subtasks(session_id: str, round_no: int) -> int:
+    """Remove a whole round's subtasks (used by plan regenerate/edit)."""
+    with _lock:
+        with _conn() as conn:
+            cur = conn.execute(
+                "DELETE FROM subtasks WHERE session_id=? AND round_no=?",
+                (session_id, round_no),
+            )
+            conn.commit()
+            return cur.rowcount

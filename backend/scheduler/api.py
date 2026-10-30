@@ -23,7 +23,7 @@ def _group_config_hook(group_id: str) -> dict:
     if team is None:
         return {"enable_plan_confirm": False, "members": [], "leader": ""}
     return {
-        "enable_plan_confirm": False,
+        "enable_plan_confirm": bool(getattr(team, "enable_plan_confirm", False)),
         "members": list(team.members),
         "leader": team.leader,
     }
@@ -34,15 +34,17 @@ def ensure_group_config_hook() -> None:
 
 
 def create_session(team_id: str, user_query: str) -> str:
-    """Create a new orchestrator session for a team."""
+    """Create a new orchestrator session for a team.
+
+    Does NOT block on the leader call — the background engine loop picks
+    this session up on its next poll.
+    """
     team = TeamStore().get(team_id)
     if team is None:
         raise HTTPException(status_code=404, detail=f"专家团 {team_id} 不存在")
     ensure_group_config_hook()
     session_id = f"s_{uuid.uuid4().hex[:8]}"
     db.create_session(session_id, team_id, user_query)
-    # Kick off planning on the next loop tick.
-    engine.advance_sessions()
     return session_id
 
 
@@ -61,7 +63,6 @@ def confirm_plan(session_id: str, decision: str, feedback: str = "") -> dict:
 
 def resume_session(session_id: str, feedback: str) -> dict:
     engine.request_resume(session_id, feedback)
-    engine.advance_sessions()
     return get_session(session_id)
 
 

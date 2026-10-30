@@ -25,6 +25,7 @@ class Team(BaseModel):
     description: str = ""
     leader: str
     members: list[str] = Field(default_factory=list)
+    enable_plan_confirm: bool = False
     created_at: str = ""
 
 

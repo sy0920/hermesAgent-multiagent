@@ -254,50 +254,16 @@ def _build_default_tree(request: str, members: list[str], leader: str | None = N
 
 
 def invoke_team(team_id: str, request: str) -> dict:
-    """Ask the planner (team leader) for a task plan, then execute it.
+    """Legacy invoke — retired.
 
-    Idempotency is memory-window based: within INVOKE_WINDOW_SECONDS after a
-    successful build, re-invokes reuse the last root task id (no kanban scan
-    involved — immune to table-parse drift). The lock serializes concurrent
-    invokes so only one builds.
+    The central orchestrator (POST /api/teams/{id}/sessions) replaced this.
+    Kept only for API compatibility; raises instead.
     """
-    with _invoke_lock:
-        team = _get_team(team_id)
-        orchestrator = team.leader
-        now = time.time()
-
-        last = _invoke_windows.get(team_id)
-        if last is not None and now - last[1] < INVOKE_WINDOW_SECONDS:
-            # A tree was built recently for this team: reuse it.
-            return {"orchestrator_task_id": last[0]}
-
-        final_id: str | None = None
-        try:
-            members = team.members
-            reply, _ = expert_chat(
-                orchestrator,
-                _PLAN_PROMPT.format(
-                    request=request,
-                    members=", ".join(members),
-                    display_name=team.display_name,
-                ),
-                session_id=None,
-            )
-            plan = _extract_plan(reply)
-            if plan is not None and _validate_plan(plan, members):
-                final_id = _build_from_plan(plan, request)
-        except (HermesError, Exception):
-            final_id = None
-
-        if final_id is None:
-            final_id = _build_default_tree(request, team.members, leader=team.leader)
-
-        _invoke_windows[team_id] = (final_id, time.time())
-
-        # Auto-dispatch ready tasks in parallel (roots will run immediately).
-        advance_once()
-
-        return {"orchestrator_task_id": final_id}
+    _get_team(team_id)
+    raise HTTPException(
+        status_code=410,
+        detail="旧 invoke 已迁移：请使用 POST /api/teams/{team_id}/sessions 创建调度会话",
+    )
 
 
 def advance_once() -> int:
@@ -334,23 +300,12 @@ def advance_once() -> int:
 
 
 def _dispatch_worker_safe(assignee: str, task_id: str) -> None:
-    """Run a worker in a background thread; failures are logged, not raised.
+    """Legacy auto-dispatch — retired.
 
-    Uses the single-shot LLM worker — exactly ONE model call per task, no
-    Hermes agent tool loop, token usage is bounded and cheap.
+    The central orchestrator (scheduler/engine) replaced auto-dispatch;
+    this path is kept only for API compatibility and no longer executes.
     """
-    try:
-        from app.llm_worker import dispatch_single_shot
-        from app.hermes_client import kanban_show, profile_soul_path
-
-        card = kanban_show(task_id)
-        work_dir = DEFAULT_WORKSPACE
-        card["workspace"] = work_dir
-        soul_path = Path(profile_soul_path(assignee))
-        soul_text = soul_path.read_text(encoding="utf-8") if soul_path.is_file() else ""
-        dispatch_single_shot(card=card, soul_text=soul_text)
-    except Exception as exc:  # noqa: BLE001 - background, log only
-        logger.warning("auto-dispatch worker failed for %s: %s", task_id, exc)
+    logger.info("legacy auto-dispatch ignored (migrated to scheduler): %s", task_id)
 
 
 def _advance_loop() -> None:

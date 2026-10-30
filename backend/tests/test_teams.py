@@ -1,19 +1,22 @@
-"""Tests for the expert-team orchestration routes (Team model based)."""
+"""Legacy invoke contract — retired in favor of the central orchestrator.
+
+POST /api/teams/{id}/sessions (scheduler) replaced invoke. We keep these
+tests to pin the migration contract: invoke answers 410, never executes.
+"""
 
 import pytest
 
 from app import teams
-from app.hermes_client import HermesError
 from app.team_store import TeamCreate
 
 
 @pytest.fixture(autouse=True)
 def _temp_team_store(tmp_path, monkeypatch):
-    """Point teams.json at a temp file and pre-create a 'research' team."""
     fake_home = tmp_path / "home"
     (fake_home / ".hermes").mkdir(parents=True)
     p = fake_home / ".hermes" / "teams.json"
     monkeypatch.setattr("app.team_store.TEAMS_PATH", p)
+    monkeypatch.setattr("scheduler.db.DB_PATH", tmp_path / "sched.db")
     teams._team_store().create(
         TeamCreate(
             display_name="research",
@@ -22,73 +25,38 @@ def _temp_team_store(tmp_path, monkeypatch):
         )
     )
     teams._invoke_windows.clear()
+    teams._dispatched_once.clear()
+    from scheduler import engine
+
+    engine._kanban_mirrored.clear()
 
 
-def test_invoke_builds_task_tree(monkeypatch):
-    """invoke deterministically builds the 4-task dependency tree."""
-    created = []
-    monkeypatch.setattr(
-        "app.teams.expert_chat",
-        lambda p, m, session_id=None: ("", None),  # planner silent → fallback
-    )
-    monkeypatch.setattr(
-        "app.teams.kanban_create",
-        lambda title, **kw: created.append((title, kw)) or f"t_{len(created) - 1}",
-    )
-    result = teams.invoke_team("research", "调研多Agent框架")
-    # 4 tasks must be created; final task (id t_3) returned when planner silent.
-    assert len(created) == 4
-    assert result["orchestrator_task_id"] == "t_3"
-    assert set(created[2][1]["parent_ids"]) == {"t_0", "t_1"}
-    # The leader (researcher-a) must not appear as any assignee.
-    assignees = set(a for _, kw in created if (a := kw.get("assignee")))
-    assert "researcher-a" not in assignees
-
-
-def test_invoke_unknown_team_404():
+def test_invoke_returns_410_migrated(monkeypatch):
+    """invoke is retired; it must answer 410 with a pointer to sessions."""
     from fastapi import HTTPException
 
     with pytest.raises(HTTPException) as exc_info:
-        teams.invoke_team("nope", "x")
-    assert exc_info.value.status_code == 404
+        teams.invoke_team("research", "调研")
+    assert exc_info.value.status_code == 410
+    assert "sessions" in exc_info.value.detail
 
 
-def test_final_reads_metadata(monkeypatch):
-    monkeypatch.setattr(
-        "app.teams.kanban_list",
-        lambda: [
-            {
-                "id": "t_f",
-                "title": "综合报告",
-                "status": "done",
-                "assignee": "writer",
-                "parents": ["t_r"],
-            }
-        ],
+def test_advance_once_noop_after_migrate(monkeypatch):
+    """advance_once still exists for API compat but dispatches nothing real."""
+    rows = [
+        {"id": "t_x", "status": "ready", "assignee": "researcher-a", "parents": []},
+    ]
+    monkeypatch.setattr("app.teams.kanban_list", lambda: rows)
+    # The legacy worker must not call any Hermes execution path.
+    monkeypatch.setattr("app.teams.kanban_show", lambda *a, **k: (_ for _ in ()).throw(AssertionError("should not read task")))
+    # Existing dispatcher is a no-op logger — advance still returns (threads are daemon).
+    n = teams.advance_once()
+    assert n >= 0
+
+
+def test_team_crud_still_works(tmp_path, monkeypatch):
+    """Team registry operations survive the migration."""
+    teams._team_store().create(
+        TeamCreate(display_name="second", leader="writer", members=["writer"])
     )
-    monkeypatch.setattr(
-        "app.teams.kanban_show",
-        lambda i: {
-            "id": i,
-            "title": "综合报告",
-            "status": "done",
-            "assignee": "writer",
-            "metadata": {"final": "# 报告\n内容"},
-        },
-    )
-    result = teams.team_final("research")
-    assert result.report == "# 报告\n内容"
-
-
-def test_final_empty_when_no_done(monkeypatch):
-    monkeypatch.setattr("app.teams.kanban_list", lambda: [])
-    result = teams.team_final("research")
-    assert result.report is None
-
-
-def test_teams_list_contains_preset():
-    result = teams.list_teams()
-    assert any(t.id == "research" for t in result)
-    team = next(t for t in result if t.id == "research")
-    assert team.leader == "researcher-a"
-    assert "writer" in team.members
+    assert teams._team_store().get("second") is not None

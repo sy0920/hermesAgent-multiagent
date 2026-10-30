@@ -69,6 +69,7 @@ def _extract_plan_json(text: str) -> dict | None:
         cleaned.append(
             {
                 "expert_id": t.get("expert_id", ""),
+                "title": t.get("title") or (t.get("instruction") or "")[:80] or "任务",
                 "instruction": t.get("instruction", ""),
                 "input_context": t.get("input_context", ""),
                 "deps": [d for d in (t.get("deps") or []) if isinstance(d, int)],
