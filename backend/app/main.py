@@ -11,13 +11,16 @@ from fastapi.responses import JSONResponse
 from app.experts import router as experts_router
 from app.hermes_client import HermesError
 from app.kanban import router as kanban_router
-from app.teams import ensure_advance_loop, router as teams_router
+from app.teams import router as teams_router
+from scheduler import api as scheduler_api
+from scheduler import engine as engine_mod
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Keep the board advancing even without the Hermes gateway running.
-    ensure_advance_loop()
+    # Wire group config + engine loop for the central orchestrator.
+    scheduler_api.ensure_group_config_hook()
+    engine_mod.ensure_engine_loop()
     yield
 
 
@@ -38,6 +41,7 @@ app.add_middleware(
 app.include_router(experts_router)
 app.include_router(kanban_router)
 app.include_router(teams_router)
+app.include_router(scheduler_api.router)
 
 
 @app.exception_handler(HermesError)

@@ -5,6 +5,17 @@ import pytest
 from app.hermes_client import ensure_gateway
 
 
+@pytest.fixture(autouse=True)
+def _clean_gateway_procs():
+    from app import hermes_client
+
+    prev = dict(hermes_client._gateway_procs)
+    hermes_client._gateway_procs.clear()
+    yield
+    hermes_client._gateway_procs.clear()
+    hermes_client._gateway_procs.update(prev)
+
+
 class _FakeProc:
     def __init__(self):
         self._code = None  # None = still running
