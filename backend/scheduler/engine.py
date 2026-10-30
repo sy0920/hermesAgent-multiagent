@@ -15,6 +15,7 @@ Key facts:
 
 from __future__ import annotations
 
+import json
 import logging
 import threading
 import time
@@ -83,7 +84,7 @@ def _start_planning(session: dict[str, Any]) -> None:
     db.update_session(
         session["session_id"],
         status="planning",
-        plan_json=plan.get("summary", ""),
+        plan_json=json.dumps(plan, ensure_ascii=False),
     )
     _materialize_subtasks(session["session_id"], session["round_no"], plan.get("subtasks") or [])
     if group.get("enable_plan_confirm"):

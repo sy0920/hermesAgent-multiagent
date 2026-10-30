@@ -154,6 +154,83 @@ export function invokeTeam(
   })
 }
 
+// ---------------------------------------------------------------------------
+// Scheduler sessions (central orchestrator / Plan confirm / resume)
+// ---------------------------------------------------------------------------
+
+export interface SubtaskView {
+  subtask_id: string
+  session_id: string
+  round_no: number
+  expert_id: string
+  title: string
+  instruction: string
+  input_context: string
+  deps: string[]
+  status: string
+  output: string
+}
+
+export interface SessionView {
+  session_id: string
+  group_id: string
+  status: string
+  user_query: string
+  round_no: number
+  plan_json: string
+  final_report: string
+  subtasks: SubtaskView[]
+}
+
+export function createSession(
+  teamId: string,
+  userQuery: string,
+): Promise<{ session_id: string }> {
+  return request(`/teams/${teamId}/sessions`, {
+    method: 'POST',
+    body: JSON.stringify({ user_query: userQuery }),
+  })
+}
+
+export function fetchSession(sessionId: string): Promise<SessionView> {
+  return request(`/sessions/${sessionId}`)
+}
+
+export function confirmPlan(
+  sessionId: string,
+  decision: 'confirm' | 'regenerate' | 'edit',
+  feedback?: string,
+): Promise<SessionView> {
+  return request(`/sessions/${sessionId}/confirm`, {
+    method: 'POST',
+    body: JSON.stringify({ decision, feedback: feedback ?? '' }),
+  })
+}
+
+export function resumeSession(
+  sessionId: string,
+  feedback: string,
+): Promise<SessionView> {
+  return request(`/sessions/${sessionId}/resume`, {
+    method: 'POST',
+    body: JSON.stringify({ feedback }),
+  })
+}
+
+// Shared helper to bridge session state changes to compute.
+export function parsePlanJson(planJson: string): { summary: string; subtasks: SubtaskView[] } | null {
+  if (!planJson) return null
+  try {
+    const obj = JSON.parse(planJson)
+    if (obj && Array.isArray(obj.subtasks)) {
+      return obj as { summary: string; subtasks: SubtaskView[] }
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
 export function fetchTeamFinal(teamId: string): Promise<TeamFinal> {
   return request(`/teams/${teamId}/final`)
 }

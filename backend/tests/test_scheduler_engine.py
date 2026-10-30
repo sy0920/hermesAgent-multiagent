@@ -148,3 +148,27 @@ def test_kanban_sync_creates_tasks(monkeypatch, _sched):
 
     advance_sessions()
     assert any("调研" in t for t in created)
+
+
+def test_plan_json_stores_full_plan(monkeypatch, _sched):
+    """plan_json must include subtasks so the frontend can render the plan card."""
+    import json as _json
+
+    from scheduler.engine import advance_sessions
+
+    _mk_session()
+    plan = {
+        "summary": "概要",
+        "subtasks": [{"expert_id": "a", "instruction": "调研", "input_context": "c", "deps": [], "parallel_group": "g"}],
+    }
+    monkeypatch.setattr("scheduler.engine.lead_plan", lambda *a, **k: plan)
+    monkeypatch.setattr(
+        "scheduler.engine._group_config",
+        lambda gid: {"enable_plan_confirm": True, "members": ["a"], "leader": "l"},
+    )
+    advance_sessions()
+    s = db.get_session("s1")
+    saved = _json.loads(s["plan_json"])
+    assert saved["summary"] == "概要"
+    assert len(saved["subtasks"]) == 1
+    assert saved["subtasks"][0]["instruction"] == "调研"
